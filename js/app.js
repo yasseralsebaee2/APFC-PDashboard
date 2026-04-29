@@ -12,6 +12,7 @@
     const ACCESS_REQUEST_EMAIL = 'yasser.alsebaee@granadaeurope.com';
     const DEFAULT_PROJECT = 'Titania';
     const AUTH_STORAGE_KEY = 'apfcDashboardAuth';
+    const AUTH_BRIDGE_MESSAGE_TYPE = 'APFC_AUTH';
 
     const els = {
       authShell: document.getElementById('authShell'),
@@ -190,6 +191,8 @@
     let dailyReportEquipmentRows = [];
     let usersDirectory = [];
     let currentUser = null;
+    let pendingExternalAuth = null;
+    let externalAuthOrigin = '';
     let selectedProject = DEFAULT_PROJECT;
     let selectedPlot = '';
     let chartMode = 'daily'; // daily or cumulative (toggle)
@@ -322,6 +325,30 @@
 
     function clearAuthSession() {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+
+    function getAllowedParentOrigins() {
+      const configured = window.APFC_ALLOWED_PARENT_ORIGINS;
+      if (Array.isArray(configured)) {
+        return configured.map(origin => normalizeText(origin)).filter(Boolean);
+      }
+      if (typeof configured === 'string' && configured.trim()) {
+        return configured.split(',').map(origin => normalizeText(origin)).filter(Boolean);
+      }
+      return [];
+    }
+
+    function isTrustedExternalAuthOrigin(origin) {
+      const normalizedOrigin = normalizeText(origin);
+      if (!normalizedOrigin) return false;
+      if (normalizedOrigin === window.location.origin) return true;
+
+      const allowedOrigins = getAllowedParentOrigins();
+      if (allowedOrigins.length) {
+        return allowedOrigins.includes(normalizedOrigin);
+      }
+
+      return /^https:\/\//i.test(normalizedOrigin);
     }
 
     function sanitizeUserRecord(record) {
@@ -647,6 +674,76 @@
     function findUserRecord(loginValue) {
       const normalized = normalizeLogin(loginValue);
       return usersDirectory.find(user => normalizeLogin(user.username) === normalized || normalizeLogin(user.email) === normalized) || null;
+    }
+
+    function queueExternalAuth(payload = {}, origin = '') {
+      pendingExternalAuth = {
+        email: normalizeText(payload.email || payload.userEmail || payload.username),
+        name: normalizeText(payload.name || payload.displayName || payload.fullName),
+        origin: normalizeText(origin)
+      };
+      if (pendingExternalAuth.origin) {
+        externalAuthOrigin = pendingExternalAuth.origin;
+      }
+    }
+
+    async function signInWithExternalIdentity(payload = {}) {
+      const email = normalizeText(payload.email || payload.userEmail || payload.username);
+      if (!email) {
+        throw new Error('Power Pages sign-in did not include a user email.');
+      }
+
+      const matchedUser = findUserRecord(email);
+      if (!matchedUser) {
+        throw new Error(`No dashboard access record was found for ${email}.`);
+      }
+
+      const bridgedUser = {
+        ...matchedUser,
+        email: email || matchedUser.email,
+        name: normalizeText(payload.name || payload.displayName || payload.fullName || matchedUser.name || matchedUser.username),
+        authSource: 'powerpages'
+      };
+
+      applyUserSession(bridgedUser);
+      await loadDashboardData();
+      updateTimelinePileList(selectedProject);
+      syncTimelinePresetButtons();
+      renderTimelinePage(selectedProject);
+      pendingExternalAuth = null;
+      setAuthLocked(false);
+      if (els.authPasswordInput) els.authPasswordInput.value = '';
+      if (els.authError) els.authError.textContent = '';
+      return bridgedUser;
+    }
+
+    async function tryApplyPendingExternalAuth() {
+      if (!pendingExternalAuth?.email || !usersDirectory.length) return false;
+      await signInWithExternalIdentity(pendingExternalAuth);
+      return true;
+    }
+
+    function bindExternalAuthBridge() {
+      if (window.__apfcExternalAuthBound) return;
+      window.addEventListener('message', async event => {
+        const data = event?.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type !== AUTH_BRIDGE_MESSAGE_TYPE) return;
+        if (!isTrustedExternalAuthOrigin(event.origin)) return;
+
+        const payload = data.payload && typeof data.payload === 'object' ? data.payload : data;
+        queueExternalAuth(payload, event.origin);
+
+        try {
+          if (usersDirectory.length) {
+            await tryApplyPendingExternalAuth();
+          }
+        } catch (err) {
+          console.error(err);
+          setAuthLocked(true, err.message || 'Unable to continue with Power Pages sign-in.');
+        }
+      });
+      window.__apfcExternalAuthBound = true;
     }
 
     function broadcastAuthContext() {
@@ -7236,8 +7333,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     async function initDashboard() {
       try {
         bindMapFrameSync();
+        bindExternalAuthBridge();
         await loadUsersDirectory();
-        const hasSession = await restoreExistingSession();
+        const hasSession = await tryApplyPendingExternalAuth() || await restoreExistingSession();
 
         if (hasSession) {
           await loadDashboardData();
