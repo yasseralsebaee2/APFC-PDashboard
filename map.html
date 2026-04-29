@@ -771,13 +771,46 @@
     }
     function normalizeId(value) { return String(value || '').trim().toUpperCase(); }
 
+    function shiftKingPostDateTime(value, hours = 4) {
+      const raw = String(value ?? '').trim();
+      if (!raw) return null;
+
+      const naiveMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+      if (naiveMatch) {
+        const [, year, month, day, hour, minute, second = '00'] = naiveMatch;
+        const shifted = new Date(Date.UTC(
+          Number(year),
+          Number(month) - 1,
+          Number(day),
+          Number(hour),
+          Number(minute),
+          Number(second)
+        ));
+        shifted.setUTCHours(shifted.getUTCHours() + hours);
+        return [
+          shifted.getUTCFullYear(),
+          String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+          String(shifted.getUTCDate()).padStart(2, '0')
+        ].join('-') + 'T' + [
+          String(shifted.getUTCHours()).padStart(2, '0'),
+          String(shifted.getUTCMinutes()).padStart(2, '0'),
+          String(shifted.getUTCSeconds()).padStart(2, '0')
+        ].join(':');
+      }
+
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return raw;
+      parsed.setHours(parsed.getHours() + hours);
+      return parsed.toISOString();
+    }
+
     function sanitizeKingPostRow(row) {
       return {
         contractor1: row?.asbuilt_Contractor1 ?? row?.contractor1 ?? null,
         asbuilt_depth: row?.asbuilt_depth ?? null,
         asbuilt_depthdrillingfromplatform: row?.asbuilt_DepthDrillingFromPlatform ?? row?.asbuilt_depthdrillingfromplatform ?? null,
-        asbuilt_drillingEnd: row?.asbuilt_DrillingEnd ?? row?.asbuilt_drillingEnd ?? null,
-        asbuilt_drillingStart: row?.asbuilt_DrillingStart ?? row?.asbuilt_drillingStart ?? null,
+        asbuilt_drillingEnd: shiftKingPostDateTime(row?.asbuilt_DrillingEnd ?? row?.asbuilt_drillingEnd ?? null),
+        asbuilt_drillingStart: shiftKingPostDateTime(row?.asbuilt_DrillingStart ?? row?.asbuilt_drillingStart ?? null),
         asbuilt_durationdrilling: row?.asbuilt_DurationDrilling ?? row?.asbuilt_durationdrilling ?? null,
         asbuilt_levelplatform: row?.asbuilt_LevelPlatform ?? row?.asbuilt_levelplatform ?? null,
         asbuilt_leveltoe: row?.asbuilt_LevelToe ?? row?.asbuilt_leveltoe ?? null,
@@ -785,10 +818,10 @@
         asbuilt_rig1: row?.asbuilt_Rig1 ?? row?.asbuilt_rig1 ?? null,
         asbuilt_rig1depth: row?.asbuilt_Rig1Depth ?? row?.asbuilt_rig1depth ?? null,
         asbuilt_textfield: row?.asbuilt_TextField ?? row?.asbuilt_textfield ?? null,
-        asbuilt_wir: row?.asbuilt_WIR ?? row?.asbuilt_wir ?? null,
+        asbuilt_wir: shiftKingPostDateTime(row?.asbuilt_WIR ?? row?.asbuilt_wir ?? null),
         asbuilt_x: row?.asbuilt_X ?? row?.asbuilt_x ?? null,
         asbuilt_y: row?.asbuilt_Y ?? row?.asbuilt_y ?? null,
-        beamInstallation: row?.BeamInstallation ?? row?.beamInstallation ?? row?.beaminstallation ?? null,
+        beamInstallation: shiftKingPostDateTime(row?.BeamInstallation ?? row?.beamInstallation ?? row?.beaminstallation ?? null),
         building: row?.Building ?? row?.building ?? null,
         design_depthdrilling: row?.design_DepthDrilling ?? row?.design_depthdrilling ?? null,
         design_levelplatform: row?.design_LevelPlatform ?? row?.design_levelplatform ?? null,

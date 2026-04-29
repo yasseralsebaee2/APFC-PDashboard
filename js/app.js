@@ -849,6 +849,39 @@
       return rows.filter(isExecutedRow);
     }
 
+    function shiftKingPostDateTime(value, hours = 4) {
+      const raw = normalizeText(value);
+      if (!raw) return '';
+
+      const naiveMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+      if (naiveMatch) {
+        const [, year, month, day, hour, minute, second = '00'] = naiveMatch;
+        const shifted = new Date(Date.UTC(
+          Number(year),
+          Number(month) - 1,
+          Number(day),
+          Number(hour),
+          Number(minute),
+          Number(second)
+        ));
+        shifted.setUTCHours(shifted.getUTCHours() + hours);
+        return [
+          shifted.getUTCFullYear(),
+          String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+          String(shifted.getUTCDate()).padStart(2, '0')
+        ].join('-') + 'T' + [
+          String(shifted.getUTCHours()).padStart(2, '0'),
+          String(shifted.getUTCMinutes()).padStart(2, '0'),
+          String(shifted.getUTCSeconds()).padStart(2, '0')
+        ].join(':');
+      }
+
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return raw;
+      parsed.setHours(parsed.getHours() + hours);
+      return parsed.toISOString();
+    }
+
     function extractKingPostList(data) {
       const rows = Array.isArray(data)
         ? data
@@ -863,9 +896,9 @@
           profile: normalizeText(row.profile || row.Profile),
           operationalStatus: normalizeText(row.operationalStatus || row.OperationalStatus),
           isInstalled: row.isInstalled ?? row.IsInstalled ?? null,
-          beamInstallation: normalizeText(row.beamInstallation || row.BeamInstallation),
-          drillingStart: normalizeText(row.asbuilt_DrillingStart || row.asbuilt_drillingStart),
-          drillingEnd: normalizeText(row.asbuilt_DrillingEnd || row.asbuilt_drillingEnd),
+          beamInstallation: shiftKingPostDateTime(row.beamInstallation || row.BeamInstallation),
+          drillingStart: shiftKingPostDateTime(row.asbuilt_DrillingStart || row.asbuilt_drillingStart),
+          drillingEnd: shiftKingPostDateTime(row.asbuilt_DrillingEnd || row.asbuilt_drillingEnd),
           drillingDuration: Number(row.asbuilt_DurationDrilling ?? row.asbuilt_durationdrilling ?? 0) || 0,
           rig1: normalizeText(row.asbuilt_Rig1 || row.asbuilt_rig1),
           rig1Depth: Number(row.asbuilt_Rig1Depth ?? row.asbuilt_rig1depth ?? 0) || 0,
@@ -998,6 +1031,15 @@
       return normalizeText(row?.operationalStatus).toLowerCase() === 'readytoinstall';
     }
 
+    function hasExplicitTimezoneSuffix(value) {
+      return /(?:Z|[+\-]\d{2}:\d{2})$/i.test(normalizeText(value));
+    }
+
+    function formatLocalDateKey(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
     function getKingPostMetricDateKey(row, metric) {
       const raw = metric === 'installed'
         ? normalizeText(row?.beamInstallation)
@@ -1005,12 +1047,21 @@
       if (!raw) return '';
       const d = new Date(raw);
       if (Number.isNaN(d.getTime())) return '';
-      if (overviewDateMode === 'calendar') return formatDateKeyInTimezone(d);
-      const totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
-      if (totalMinutes < (7 * 60)) {
-        d.setUTCDate(d.getUTCDate() - 1);
+      const hasExplicitTimezone = hasExplicitTimezoneSuffix(raw);
+      if (overviewDateMode === 'calendar') {
+        return hasExplicitTimezone ? formatDateKeyInTimezone(d) : formatLocalDateKey(d);
       }
-      return d.toISOString().slice(0, 10);
+      const totalMinutes = hasExplicitTimezone
+        ? (d.getUTCHours() * 60 + d.getUTCMinutes())
+        : (d.getHours() * 60 + d.getMinutes());
+      if (totalMinutes < (7 * 60)) {
+        if (hasExplicitTimezone) {
+          d.setUTCDate(d.getUTCDate() - 1);
+        } else {
+          d.setDate(d.getDate() - 1);
+        }
+      }
+      return hasExplicitTimezone ? d.toISOString().slice(0, 10) : formatLocalDateKey(d);
     }
 
     function isKingPostMetricRow(row, metric) {
