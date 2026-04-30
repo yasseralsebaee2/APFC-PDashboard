@@ -347,8 +347,7 @@
       if (allowedOrigins.length) {
         return allowedOrigins.includes(normalizedOrigin);
       }
-
-      return /^https:\/\//i.test(normalizedOrigin);
+      return false;
     }
 
     function sanitizeUserRecord(record) {
