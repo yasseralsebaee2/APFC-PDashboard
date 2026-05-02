@@ -1611,7 +1611,7 @@
     const chartCard = document.getElementById('chartCard');
     const chartContent = document.getElementById('chartContent');
     const chartToggleBtn = document.getElementById('chartToggleBtn');
-    const progressCardBody = progressCard.querySelector('.progress-card-body');
+    const progressCardBody = progressCard ? progressCard.querySelector('.progress-card-body') : null;
     const chartArea = document.getElementById('chartArea');
     const chartSvg = document.getElementById('chartSvg');
     const chartTooltip = document.getElementById('chartTooltip');
@@ -1645,16 +1645,20 @@
     if (chartToggleBtn) chartToggleBtn.addEventListener('click', () => { isChartCollapsed = !isChartCollapsed; applyChartCollapsedState(); });
 
     function applyVisibilityCollapsedState() {
+      if (!visibilityBody || !visibilityToggleBtn) return;
       visibilityBody.style.display = isVisibilityCollapsed ? 'none' : 'flex';
       const visibilityCard = document.querySelector('.visibility-card');
-      visibilityCard.classList.toggle('compact', isVisibilityCollapsed);
+      if (visibilityCard) visibilityCard.classList.toggle('compact', isVisibilityCollapsed);
       visibilityToggleBtn.textContent = 'Fade';
       visibilityToggleBtn.classList.toggle('active', !isVisibilityCollapsed);
       visibilityToggleBtn.title = isVisibilityCollapsed ? 'Show pile opacity' : 'Hide pile opacity';
     }
-    visibilityToggleBtn.addEventListener('click', () => { isVisibilityCollapsed = !isVisibilityCollapsed; applyVisibilityCollapsedState(); });
+    if (visibilityToggleBtn) {
+      visibilityToggleBtn.addEventListener('click', () => { isVisibilityCollapsed = !isVisibilityCollapsed; applyVisibilityCollapsedState(); });
+    }
 
     function renderProgressCard() {
+      if (!progressRingValue || !progressPercent || !progressExecuted || !progressRemaining || !progressTotal) return;
       const scopedRecords = getStrictScopedElementRecords();
       const pileCount = scopedRecords.filter(record => record.elementType === 'pile').length;
       const kingPostCount = scopedRecords.filter(record => record.elementType === 'kingpost').length;
