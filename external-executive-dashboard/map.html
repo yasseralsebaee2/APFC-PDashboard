@@ -1,0 +1,3504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>APFC - Titania | 3D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.19.1/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.19.1/mapbox-gl.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+  <style>
+    :root {
+      --dark: #272C30;
+      --gold: #E8D611;
+      --green: #50C878;
+      --text: #272C30;
+      --premium-green: #11ee89;
+      --premium-amber: #ffb02e;
+      --premium-ice: #eff6fb;
+      --glass-dark: rgba(9, 13, 17, 0.48);
+      --glass-border: rgba(255,255,255,0.16);
+      --glass-shadow: 0 18px 46px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.12);
+      --glass-blur: blur(18px) saturate(1.18);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at 50% 18%, rgba(255,244,221,0.95) 0%, rgba(233,241,250,0.82) 32%, rgba(191,208,226,0.42) 56%, rgba(18,24,31,0.92) 100%);
+    }
+    .header {
+      position: absolute; top: 0; left: 0; width: 100%; height: 42px;
+      background: #000; display: flex; align-items: center; padding: 0 14px; z-index: 30;
+    }
+    .header img { height: 24px; width: auto; object-fit: contain; margin-right: 12px; }
+    .header-title { color: #fff; font-size: 14px; font-weight: 500; letter-spacing: 0.3px; }
+    #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.96; }
+    .map-vignette {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(255,255,255,0) 0%, rgba(255,255,255,0) 54%, rgba(5,8,12,0.22) 100%),
+        linear-gradient(180deg, rgba(5,8,12,0.08) 0%, rgba(5,8,12,0) 24%, rgba(5,8,12,0.14) 100%);
+      mix-blend-mode: multiply;
+    }
+    .footer {
+      display: flex; align-items: center; padding-left: 14px; font-size: 12px; color: #fff;
+      font-weight: 500; position: absolute; left: 0; bottom: 0; width: 100%; height: 34px;
+      background: #000; z-index: 50; pointer-events: none;
+    }
+    .footer-text { position: absolute; left: 14px; font-size: 12px; letter-spacing: 0.3px; color: #fff; }
+
+    .tests-legend {
+      position: absolute;
+      right: 16px;
+      bottom: 48px;
+      z-index: 46;
+      min-width: 150px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      color: #fff;
+    }
+    .tests-legend-title {
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+    .tests-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 6px;
+    }
+    .tests-legend-row:last-child { margin-bottom: 0; }
+    .tests-legend-swatch {
+      width: 22px;
+      height: 22px;
+      position: relative;
+      flex: 0 0 22px;
+    }
+    .tests-legend-swatch.circle::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 2px solid #2D7FF9;
+      border-radius: 50%;
+    }
+    .tests-legend-swatch.rectangle::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 2px solid #B784D7;
+      border-radius: 3px;
+    }
+    .mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right { bottom: 4px !important; z-index: 60 !important; }
+    .mapboxgl-ctrl-attrib {
+      background: transparent !important; color: #fff !important; border-radius: 0;
+      padding: 0 6px !important; box-shadow: none !important;
+    }
+    .mapboxgl-ctrl-attrib a { color: #fff !important; }
+    .mapboxgl-ctrl-scale {
+      background: transparent !important; color: #fff !important; border: 1px solid #fff !important; box-shadow: none !important;
+    }
+    .glass-card {
+      background: var(--glass-dark); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+      backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); color: #fff; border-radius: 18px; overflow: hidden;
+    }
+
+    .progress-card {
+      position: absolute; top: 16px; left: 16px; width: 240px; z-index: 46;
+      transition: max-height 0.22s ease; max-height: 220px;
+      background: rgba(7, 12, 17, 0.26);
+      border-color: rgba(255,255,255,0.12);
+      box-shadow: 0 14px 32px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.1);
+      backdrop-filter: blur(14px) saturate(1.06);
+      -webkit-backdrop-filter: blur(14px) saturate(1.06);
+    }
+    .progress-card.collapsed { max-height: 50px; overflow: hidden; }
+    .progress-card-header {
+      position: relative; padding: 12px 14px 6px 14px; min-height: 50px;
+    }
+    .progress-card-title { font-size: 13px; font-weight: 700; color: #fff; }
+    .progress-card-subtitle { font-size: 10px; color: rgba(255,255,255,0.74); margin-top: 2px; }
+    .progress-card-body { display: flex; align-items: center; gap: 14px; padding: 4px 14px 14px 14px; }
+    .progress-ring-wrap { position: relative; width: 84px; height: 84px; flex: 0 0 84px; }
+    .progress-ring-svg { width: 84px; height: 84px; transform: rotate(-90deg); }
+    .progress-ring-bg { fill: none; stroke: rgba(255,255,255,0.12); stroke-width: 8; }
+    .progress-ring-value {
+      fill: none; stroke: var(--gold); stroke-width: 8; stroke-linecap: round;
+      transition: stroke-dashoffset 0.4s ease; filter: drop-shadow(0 0 8px rgba(232,214,17,0.22));
+    }
+    .progress-ring-center {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      flex-direction: column; pointer-events: none;
+    }
+    .progress-percent { font-size: 17px; font-weight: 700; color: #fff; line-height: 1; }
+    .progress-percent-sub { font-size: 9px; color: rgba(255,255,255,0.65); margin-top: 3px; }
+    .progress-stats { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .progress-stat { display: flex; justify-content: space-between; gap: 16px; }
+    .progress-stat-label { font-size: 11px; color: rgba(255,255,255,0.72); }
+    .progress-stat-value { font-size: 12px; font-weight: 700; color: #fff; }
+
+    .right-controls {
+      position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+      z-index: 47; display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+    }
+    .view-switcher {
+      position: relative; right: auto; top: auto; transform: none;
+      z-index: 47; display: flex; flex-direction: column; gap: 5px; padding: 5px;
+    }
+    .view-btn {
+      border: 1px solid rgba(255,255,255,0.16); background: linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.055)); color: #fff;
+      border-radius: 999px; padding: 5px 9px; font-size: 9px; font-weight: 800; cursor: pointer;
+      min-width: 48px;
+      transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .view-btn:hover { background: rgba(255,255,255,0.16); }
+    .view-btn.active {
+      background: linear-gradient(135deg, #fff26b 0%, #e9d80d 58%, #c8b900 100%);
+      border-color: rgba(255,242,107,0.95); color: #070907;
+      box-shadow: 0 8px 24px rgba(232,214,17,0.26), inset 0 1px 0 rgba(255,255,255,0.42);
+    }
+
+    .status-legend {
+      position: absolute;
+      right: 16px;
+      bottom: 150px;
+      z-index: 46;
+      min-width: 150px;
+      padding: 9px 11px;
+      border-radius: 15px;
+    }
+    .status-legend-title {
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.92);
+      margin-bottom: 7px;
+    }
+    .status-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 9px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.84);
+      margin-bottom: 5px;
+    }
+    .status-legend-row:last-child { margin-bottom: 0; }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      box-shadow: 0 0 18px currentColor;
+      flex: 0 0 10px;
+    }
+    .status-dot.executed { color: var(--premium-green); background: var(--premium-green); }
+    .status-dot.yesterday { color: var(--premium-amber); background: var(--premium-amber); }
+    .status-dot.remaining { color: rgba(239,246,251,0.74); background: rgba(239,246,251,0.74); }
+
+    .visibility-card { position: relative; right: auto; top: auto; width: 220px; z-index: 46; }
+    .visibility-card.compact {
+      width: auto;
+      min-width: 56px;
+      overflow: visible;
+    }
+    .visibility-header { padding: 12px 14px 8px 14px; font-size: 13px; font-weight: 700; }
+    .visibility-body { padding: 0 14px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .visibility-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .visibility-label { font-size: 11px; color: rgba(255,255,255,0.82); }
+    .visibility-value { font-size: 11px; color: rgba(255,255,255,0.62); }
+    .visibility-slider { width: 100%; accent-color: var(--gold); }
+
+    .chart-card {
+      position: absolute; left: 16px; bottom: 48px; width: 365px; max-width: calc(100vw - 32px);
+      z-index: 45; transition: max-height 0.22s ease; max-height: 420px;
+      display: none !important;
+    }
+    .chart-card.collapsed { max-height: 50px; overflow: hidden; }
+    .chart-card-header {
+      position: relative; display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 12px 14px 8px 14px; min-height: 50px;
+    }
+    .chart-title-wrap { display: flex; flex-direction: column; gap: 2px; padding-right: 76px; }
+    .chart-title { font-size: 13px; font-weight: 700; color: #fff; }
+    .chart-subtitle { font-size: 10px; color: rgba(255,255,255,0.72); }
+    .chart-toggle-btn {
+      position: absolute; right: 10px; top: 10px; z-index: 3; border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.08); color: #fff; border-radius: 999px; padding: 6px 9px;
+      font-size: 10px; font-weight: 700; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    .progress-card {
+      background: rgba(9, 14, 20, 0.10);
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 18px 48px rgba(0,0,0,0.10);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .progress-card-header {
+      padding: 11px 13px 8px 13px;
+      min-height: auto;
+    }
+    .progress-card-title { color: rgba(255,255,255,0.96); }
+    .progress-card-subtitle { color: rgba(255,255,255,0.50); }
+    .progress-card-body {
+      display: flex !important;
+      padding: 0 13px 13px 13px;
+      opacity: 0.90;
+    }
+    .chart-content { position: relative; }
+    .chart-mode-switcher, .chart-switcher { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px 10px 14px; }
+    .chart-mode-btn, .chart-btn {
+      border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.08); color: #ffffff;
+      border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: all 0.18s ease; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    .chart-mode-btn.active, .chart-btn.active { background: var(--gold); color: #000000; border-color: var(--gold); }
+    .chart-body { padding: 0 12px 12px 12px; }
+    .chart-metrics { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 8px 2px; gap: 12px; }
+    .chart-metric-label { font-size: 10px; color: rgba(255,255,255,0.72); margin-bottom: 3px; }
+    .chart-metric-value { font-size: 16px; font-weight: 700; color: #ffffff; }
+    .chart-area {
+      position: relative; width: 100%; height: 185px; border-radius: 14px; background: rgba(255,255,255,0.03);
+      overflow: visible; border: 1px solid rgba(255,255,255,0.10);
+    }
+    .chart-svg { width: 100%; height: 100%; display: block; }
+    .chart-legend {
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      padding-top: 8px; color: rgba(255,255,255,0.82); font-size: 10px;
+    }
+    .chart-pill { display: inline-flex; align-items: center; gap: 6px; }
+    .chart-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); display: inline-block; }
+
+    .progress-tooltip, .chart-tooltip {
+      position: absolute; pointer-events: none; opacity: 0; transform: translateY(6px);
+      transition: opacity 0.14s ease, transform 0.14s ease; background: rgba(12,12,12,0.78); color: #fff;
+      border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; padding: 10px 12px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.22); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      min-width: 160px; z-index: 80;
+    }
+    .progress-tooltip.show, .chart-tooltip.show { opacity: 1; transform: translateY(0); }
+    .tooltip-title { font-size: 11px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .tooltip-row { display: flex; justify-content: space-between; gap: 16px; font-size: 11px; color: rgba(255,255,255,0.88); margin-bottom: 4px; }
+    .tooltip-row:last-child { margin-bottom: 0; }
+    .tooltip-label { color: rgba(255,255,255,0.62); }
+
+    .side-panel {
+      position: absolute; top: 50px; right: 10px; width: 320px; max-width: min(92vw, 320px);
+      max-height: calc(100% - 96px); background: rgba(255,255,255,0.94); box-shadow: 0 16px 36px rgba(0,0,0,0.18);
+      border: 1px solid rgba(39,44,48,0.08); z-index: 70; transform: translateX(calc(100% + 14px));
+      transition: transform 0.22s ease, opacity 0.22s ease; display: flex; flex-direction: column;
+      border-radius: 20px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); overflow: hidden; opacity: 0;
+    }
+    .side-panel.open { transform: translateX(0); opacity: 1; }
+    .side-panel-header {
+      background: linear-gradient(180deg, rgba(39,44,48,0.98) 0%, rgba(39,44,48,0.92) 100%);
+      color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; min-height: 54px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .side-panel-header h3 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    .side-panel-close {
+      width: 30px; height: 30px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.08);
+      color: #fff; border-radius: 999px; font-size: 18px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .side-panel-body {
+      padding: 12px; overflow-y: auto; font-size: 13px; color: #222;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,249,251,0.94) 100%);
+    }
+    .panel-section {
+      margin-bottom: 12px; background: rgba(255,255,255,0.72); border: 1px solid rgba(39,44,48,0.06);
+      border-radius: 14px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    }
+    .panel-section-title {
+      font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--dark);
+      background: rgba(39,44,48,0.06); padding: 9px 12px; border-bottom: 1px solid rgba(39,44,48,0.06);
+    }
+    .info-row {
+      display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: start; padding: 9px 12px;
+      border-bottom: 1px solid rgba(39,44,48,0.06);
+    }
+    .info-row:last-child { border-bottom: 0; }
+    .info-label { font-size: 11px; color: #7a8087; font-weight: 600; line-height: 1.35; }
+    .info-value { font-size: 12.5px; font-weight: 700; color: var(--text); line-height: 1.35; text-align: right; word-break: break-word; }
+
+
+    .pile-label-marker {
+      pointer-events: none;
+      position: relative;
+      width: 90px;
+      height: 0;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .pile-label-id,
+    .pile-label-type {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      text-shadow:
+        0 1px 0 rgba(255,255,255,0.45),
+        0 0 8px rgba(255,255,255,0.58),
+        0 2px 5px rgba(0,0,0,0.18);
+      font-family: Arial, sans-serif;
+    }
+    .pile-label-id {
+      top: -7px;
+      transform: translate(-50%, -100%);
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 400;
+      color: #0f151b;
+    }
+    .pile-label-type {
+      top: 7px;
+      font-size: 10.5px;
+      line-height: 1;
+      font-weight: 400;
+      color: #0073ff;
+    }
+    .pile-label-marker.satellite .pile-label-id {
+      color: #f4fbff;
+      text-shadow:
+        0 1px 0 rgba(5,14,22,0.94),
+        0 0 8px rgba(18,32,44,0.85),
+        0 0 18px rgba(10,24,36,0.55);
+    }
+    .pile-label-marker.satellite .pile-label-type {
+      color: #cce9ff;
+      text-shadow:
+        0 1px 0 rgba(5,14,22,0.94),
+        0 0 8px rgba(18,32,44,0.85),
+        0 0 18px rgba(10,24,36,0.55);
+    }
+
+    @media (max-width: 640px) {
+      .progress-card, .chart-card { display: none !important; }
+      .header { height: 40px; padding: 0 10px; }
+      .header img { height: 20px; margin-right: 8px; }
+      .header-title { font-size: 11px; letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #map { top: 0; height: 100%; }
+      .footer { height: 32px; }
+      .footer-text { left: 10px; right: 10px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      .progress-card, .visibility-card { width: calc(50vw - 12px); min-width: 0; border-radius: 16px; }
+      .progress-card { top: 48px; left: 8px; }
+      .visibility-card { width: auto; min-width: 60px; }
+      .progress-card-header, .visibility-header { padding: 10px 10px 6px 10px; }
+      .progress-card-title, .visibility-header { font-size: 11px; }
+      .progress-card-subtitle, .visibility-label, .visibility-value, .progress-stat-label { font-size: 9px; }
+      .progress-card-body { gap: 8px; padding: 2px 10px 10px 10px; }
+      .progress-ring-wrap, .progress-ring-svg { width: 64px; height: 64px; flex: 0 0 64px; }
+      .progress-percent { font-size: 13px; }
+      .progress-percent-sub { font-size: 8px; }
+      .progress-stats { gap: 5px; }
+      .progress-stat-value { font-size: 10px; }
+      .visibility-body { padding: 0 10px 10px 10px; gap: 6px; }
+      .visibility-slider { height: 18px; }
+      .chart-card { width: calc(100vw - 16px); left: 8px; bottom: calc(38px + env(safe-area-inset-bottom)); border-radius: 16px; }
+
+      .tests-legend { right: 8px; bottom: calc(38px + env(safe-area-inset-bottom)); min-width: 132px; padding: 9px 10px; border-radius: 14px; }
+      .status-legend { display: none !important; }
+      .tests-legend-title { font-size: 10px; margin-bottom: 6px; }
+      .tests-legend-row { font-size: 9px; gap: 6px; margin-bottom: 5px; }
+      .tests-legend-swatch { width: 18px; height: 18px; flex-basis: 18px; }
+      .chart-card-header { padding: 10px 12px 8px 12px; min-height: 46px; }
+      .chart-title-wrap { padding-right: 62px; }
+      .chart-title { font-size: 12px; }
+      .chart-subtitle { font-size: 9px; }
+      .chart-toggle-btn { right: 8px; top: 8px; padding: 5px 8px; font-size: 9px; }
+      .progress-toggle-btn { right: 8px; top: 8px; padding: 5px 8px; font-size: 9px; }
+      .chart-mode-switcher, .chart-switcher { padding: 0 12px 8px 12px; gap: 5px; }
+      .chart-mode-btn, .chart-btn { font-size: 10px; padding: 6px 9px; }
+      .chart-body { padding: 0 10px 10px 10px; }
+      .chart-area { height: 160px; }
+      .chart-metric-label, .chart-legend { font-size: 9px; }
+      .chart-metric-value { font-size: 14px; }
+      .right-controls {
+        right: 8px;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+      }
+      .view-switcher { top: auto; right: auto; bottom: auto; transform: none; padding: 4px; gap: 5px; border-radius: 16px; }
+      .view-btn { min-width: 46px; padding: 6px 8px; font-size: 9px; }
+      .side-panel { top: 46px; right: 8px; left: 8px; width: auto; max-width: none; max-height: calc(100% - 92px); border-radius: 18px; transform: translateY(calc(100% + 16px)); }
+      .side-panel.open { transform: translateY(0); }
+      .info-row { grid-template-columns: 92px 1fr; gap: 8px; padding: 8px 10px; }
+      .info-label { font-size: 10px; }
+      .info-value { font-size: 11px; }
+      .pile-label-marker { width: 72px; }
+      .pile-label-id { top: -6px; font-size: 9px; }
+      .pile-label-type { top: 6px; font-size: 9px; }
+    }
+
+    @media (max-height: 480px) and (orientation: landscape) {
+      .progress-card, .chart-card { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+  <div class="map-vignette" aria-hidden="true"></div>
+
+  <div class="progress-card glass-card" id="progressCard">
+    <div class="progress-card-header">
+      <div class="progress-card-title">Overall Progress</div>
+      <div class="progress-card-subtitle">Executed piles vs total piles</div>
+    </div>
+    <div class="progress-card-body">
+      <div class="progress-ring-wrap">
+        <svg class="progress-ring-svg" viewBox="0 0 100 100">
+          <circle class="progress-ring-bg" cx="50" cy="50" r="40"></circle>
+          <circle class="progress-ring-value" id="progressRingValue" cx="50" cy="50" r="40"></circle>
+        </svg>
+        <div class="progress-ring-center">
+          <div class="progress-percent" id="progressPercent">0%</div>
+          <div class="progress-percent-sub">Complete</div>
+        </div>
+      </div>
+      <div class="progress-stats">
+        <div class="progress-stat"><span class="progress-stat-label">Executed</span><span class="progress-stat-value" id="progressExecuted">0</span></div>
+        <div class="progress-stat"><span class="progress-stat-label">Remaining</span><span class="progress-stat-value" id="progressRemaining">0</span></div>
+        <div class="progress-stat"><span class="progress-stat-label">Total</span><span class="progress-stat-value" id="progressTotal">0</span></div>
+      </div>
+    </div>
+    
+  </div>
+
+  <div class="right-controls">
+    <div class="view-switcher glass-card">
+      <button class="view-btn active" id="planViewBtn" type="button">2D</button>
+      <button class="view-btn" id="view3DBtn" type="button">3D</button>
+      <button class="view-btn active" id="streetBtn" type="button">Street</button>
+      <button class="view-btn" id="satBtn" type="button">Satellite</button>
+    </div>
+
+    <div class="visibility-card glass-card">
+    <div class="visibility-header" style="padding:6px; display:flex; justify-content:center;">
+      <button id="visibilityToggleBtn" type="button" class="view-btn" title="Pile opacity">Fade</button>
+    </div>
+    <div class="visibility-body">
+      <div class="visibility-row"><span class="visibility-label">Pile opacity</span><span class="visibility-value" id="allOpacityValue">0.70</span></div>
+      <input class="visibility-slider" id="allOpacitySlider" type="range" min="0.15" max="1.00" step="0.01" value="0.70">
+    </div>
+  </div>
+  </div>
+
+  <div class="footer"><div class="footer-text">APFC | Click any element for details</div></div>
+
+  <div class="status-legend glass-card" id="statusLegend">
+    <div class="status-legend-title">Pile Status</div>
+    <div class="status-legend-row"><span class="status-dot executed"></span><span>Executed</span></div>
+    <div class="status-legend-row"><span class="status-dot yesterday"></span><span>Last Shift</span></div>
+    <div class="status-legend-row"><span class="status-dot remaining"></span><span>Remaining</span></div>
+  </div>
+
+  <div class="tests-legend glass-card" id="testsLegend">
+    <div class="tests-legend-title">Pile Tests</div>
+    <div class="tests-legend-row"><span class="tests-legend-swatch circle"></span><span>Sonic Test</span></div>
+    <div class="tests-legend-row"><span class="tests-legend-swatch rectangle"></span><span>Dynamic Test</span></div>
+  </div>
+  <div id="sidePanel" class="side-panel">
+    <div class="side-panel-header">
+      <h3 id="panelTitle">Element Info</h3>
+      <button class="side-panel-close" id="closePanel">&times;</button>
+    </div>
+    <div class="side-panel-body" id="panelBody"></div>
+  </div>
+
+  <script>
+    const APP_VERSION = '2026.03.30.tests.02';
+    (function enforceFreshReload() {
+      try {
+        const url = new URL(window.location.href);
+        const currentV = url.searchParams.get('v');
+        if (currentV !== APP_VERSION) {
+          url.searchParams.set('v', APP_VERSION);
+          window.location.replace(url.toString());
+        }
+      } catch (err) {}
+    })();
+
+    mapboxgl.accessToken = 'pk.eyJ1IjoieWFzc2VyYWxzZWJhZWUiLCJhIjoiY20zbHdwam12MG9wdzJwczc2aGl0eTRwZCJ9.xZgmTXWHWe73-Ad1jhkmbQ';
+    const DATA_WORKER_URL = 'https://apfc-data.yasser-alsebaee.workers.dev/';
+    const DATA_WORKER_API_KEY = 'apfc_F7k9LmQ2xR8vT5ZpA1sD6wN3YtE4uH0JcB9KqX';
+    const DATA_FILE_KEYS = {
+      piles: 'piles',
+      kingpost: 'kingpost'
+    };
+    const BASE_STYLE_URL = 'mapbox://styles/yasseralsebaee/cmmfw9dvc00b001ra2h2f5vrw';
+    const SAT_STYLE_OBJECT = {
+      version: 8,
+      glyphs: 'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
+      sources: {
+        'external-satellite-raster-src': {
+          type: 'raster',
+          tiles: [
+            'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          ],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: 'Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        },
+        'sat-labels-src': {
+          type: 'vector',
+          url: 'mapbox://mapbox.mapbox-streets-v8'
+        }
+      },
+      layers: [
+        { id: 'sat-background', type: 'background', paint: { 'background-color': '#050806' } },
+        {
+          id: 'external-satellite-raster',
+          type: 'raster',
+          source: 'external-satellite-raster-src',
+          paint: {
+            'raster-opacity': 0.96,
+            'raster-fade-duration': 0,
+            'raster-contrast': 0.03,
+            'raster-saturation': -0.02
+          }
+        },
+        {
+          id: 'sat-road-labels',
+          type: 'symbol',
+          source: 'sat-labels-src',
+          'source-layer': 'road',
+          minzoom: 11,
+          filter: ['has', 'name'],
+          layout: {
+            'symbol-placement': 'line',
+            'text-field': ['coalesce', ['get', 'name_en'], ['get', 'name']],
+            'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 11, 9, 16, 11, 20, 13],
+            'text-letter-spacing': 0.01,
+            'text-rotation-alignment': 'map',
+            'text-pitch-alignment': 'viewport'
+          },
+          paint: {
+            'text-color': 'rgba(230,238,240,0.82)',
+            'text-halo-color': 'rgba(9,13,15,0.72)',
+            'text-halo-width': 1.1,
+            'text-halo-blur': 0.45
+          }
+        },
+        {
+          id: 'sat-poi-labels',
+          type: 'symbol',
+          source: 'sat-labels-src',
+          'source-layer': 'poi_label',
+          minzoom: 14,
+          filter: ['has', 'name'],
+          layout: {
+            'text-field': ['coalesce', ['get', 'name_en'], ['get', 'name']],
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 14, 9, 18, 11],
+            'text-offset': [0, 0.55],
+            'text-anchor': 'top',
+            'text-optional': true
+          },
+          paint: {
+            'text-color': 'rgba(226,233,236,0.78)',
+            'text-halo-color': 'rgba(8,12,14,0.72)',
+            'text-halo-width': 1,
+            'text-halo-blur': 0.45
+          }
+        },
+        {
+          id: 'sat-place-labels',
+          type: 'symbol',
+          source: 'sat-labels-src',
+          'source-layer': 'place_label',
+          minzoom: 6,
+          filter: ['has', 'name'],
+          layout: {
+            'text-field': ['coalesce', ['get', 'name_en'], ['get', 'name']],
+            'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 6, 11, 12, 16, 18, 22],
+            'text-anchor': 'center',
+            'text-optional': true
+          },
+          paint: {
+            'text-color': 'rgba(242,247,248,0.9)',
+            'text-halo-color': 'rgba(8,12,14,0.78)',
+            'text-halo-width': 1.4,
+            'text-halo-blur': 0.5
+          }
+        }
+      ]
+    };
+    const SATELLITE_RASTER_PROVIDER = 'esri'; // Optional test provider. Set to 'mapbox' to use the native Mapbox satellite style only.
+    const DEFAULT_PROJECT = 'Titania';
+    const AUTH_STORAGE_KEY = 'apfcDashboardAuth';
+
+    proj4.defs('EPSG:3997', '+proj=tmerc +lat_0=0 +lon_0=55.3333333333333 +k=1 +x_0=500000 +y_0=0 +datum=WGS84 +units=m +no_defs');
+
+    const PILE_SEGMENTS = 72;
+    const DISPLAY_RADIUS_SCALE = 1.35;
+    const MIN_DISPLAY_RADIUS_M = 0.75;
+    const DEFAULT_SITE_CENTER = [55.3145060, 25.0857920];
+    const MAP_PREMIUM = {
+      colors: {
+        executed: 0x10f28a,
+        executedEmissive: 0x06b86a,
+        yesterday: 0xffb02e,
+        yesterdayEmissive: 0xff7a18,
+        remaining: 0xf0f6fb,
+        remainingEmissive: 0x9fb6c6,
+        kingpostInstalled: 0x12de68,
+        kingpostInstalledEmissive: 0x08b857,
+        kingpostReady: 0xff5a00,
+        kingpostReadyEmissive: 0xff7a00,
+        kingpostPending: 0x8c98a8,
+        kingpostPendingEmissive: 0x5f6c7f,
+        selected: 0xffffff
+      },
+      camera: {
+        duration: 1450,
+        quickDuration: 720,
+        easing: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+        pitch3d: 60,
+        bearing3d: 22,
+        zoomBoost2d: 0.18,
+        zoomBoost3d: 0.28
+      }
+    };
+
+    let allBaseOpacity = 0.70;
+    let isVisibilityCollapsed = true;
+    let isChartCollapsed = true;
+    let currentMetric = 'pileCount';
+    let currentChartMode = 'daily';
+    let chartInteractivePoints = [];
+    let allPiles = [];
+    let allKingPosts = [];
+    let pileRecords = [];
+    let kingPostRecords = [];
+    let chartData = [];
+    let SITE_CENTER = DEFAULT_SITE_CENTER;
+    let pileLayer = null;
+    let mapContentBootstrapped = false;
+    let hoverRaf = 0;
+    let lastHoverRecordKey = null;
+    let isMapInteracting = false;
+    const supportsHoverInput = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+    function normalizeText(value) {
+      return String(value || '').trim();
+    }
+
+    function normalizeScopeText(value) {
+      return normalizeText(value)
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+    }
+
+    function isAllPlotsValue(value) {
+      const normalized = normalizeScopeText(value);
+      return !normalized || normalized === '-' || normalized === '—' || normalized === 'all' || normalized === 'all plots' || normalized === 'all plot';
+    }
+
+    function getStoredAuthContext() {
+      try {
+        const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function getActiveScope() {
+      const stored = getStoredAuthContext();
+      if (!stored?.project && !stored?.selectedProject) return null;
+      const selectedProject = normalizeText(stored.selectedProject);
+      const userProject = normalizeText(stored.project);
+      const effectiveProject = selectedProject || (userProject.toLowerCase() === 'all' ? DEFAULT_PROJECT : userProject) || DEFAULT_PROJECT;
+      const plotValue = Object.prototype.hasOwnProperty.call(stored, 'selectedPlot')
+        ? stored.selectedPlot
+        : stored.plot;
+      return {
+        project: effectiveProject,
+        plot: normalizeText(plotValue)
+      };
+    }
+
+    function matchesScope(row, scope) {
+      const rowProject = normalizeScopeText(row?.project || row?.Project);
+      const scopeProject = normalizeScopeText(scope?.project);
+      const rowPlot = normalizeScopeText(row?.plot || row?.Plot);
+      const scopePlot = normalizeScopeText(scope?.plot);
+      const projectMatch = rowProject === scopeProject;
+      const plotMatch = isAllPlotsValue(scope.plot) || rowPlot === scopePlot;
+      return projectMatch && plotMatch;
+    }
+
+    function getFocusedPiles(scope) {
+      if (!scope) return allPiles;
+      const scoped = allPiles.filter(row => matchesScope(row, scope));
+      return scoped.length ? scoped : allPiles;
+    }
+
+    function getFocusedKingPosts(scope) {
+      if (!scope) return allKingPosts;
+      const scoped = allKingPosts.filter(row => matchesScope(row, scope));
+      return scoped.length ? scoped : allKingPosts;
+    }
+
+    function hasScopedElements(scope) {
+      if (!scope) return (allPiles.length + allKingPosts.length) > 0;
+      const scopedPiles = allPiles.filter(row => matchesScope(row, scope));
+      const scopedKingPosts = allKingPosts.filter(row => matchesScope(row, scope));
+      return scopedPiles.length > 0 || scopedKingPosts.length > 0;
+    }
+
+    function getFocusedWidgetPiles() {
+      return getFocusedPiles(getActiveScope());
+    }
+
+    function parseNumber(value) {
+      if (value === undefined || value === null || value === '') return 0;
+      const n = Number(String(value).replace(/,/g, '').trim());
+      return Number.isFinite(n) ? n : 0;
+    }
+    function displayValue(value, digits = 2) {
+      if (value === undefined || value === null || value === '') return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n)) return String(value);
+      return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+    }
+    function displayFixed(value, digits = 3) {
+      if (value === undefined || value === null || value === '') return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n)) return String(value);
+      return n.toLocaleString('en-US', {
+        useGrouping: false,
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      });
+    }
+    function displaySigned(value, digits = 2) {
+      if (value === undefined || value === null || value === '') return '—';
+      const n = Number(value);
+      if (!Number.isFinite(n)) return String(value);
+      return `${n >= 0 ? '+' : '-'}${Math.abs(n).toFixed(digits)}`;
+    }
+    function normalizeId(value) { return String(value || '').trim().toUpperCase(); }
+
+    function shiftKingPostDateTime(value, hours = 4) {
+      const raw = String(value ?? '').trim();
+      if (!raw) return null;
+
+      const naiveMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+      if (naiveMatch) {
+        const [, year, month, day, hour, minute, second = '00'] = naiveMatch;
+        const shifted = new Date(Date.UTC(
+          Number(year),
+          Number(month) - 1,
+          Number(day),
+          Number(hour),
+          Number(minute),
+          Number(second)
+        ));
+        shifted.setUTCHours(shifted.getUTCHours() + hours);
+        return [
+          shifted.getUTCFullYear(),
+          String(shifted.getUTCMonth() + 1).padStart(2, '0'),
+          String(shifted.getUTCDate()).padStart(2, '0')
+        ].join('-') + 'T' + [
+          String(shifted.getUTCHours()).padStart(2, '0'),
+          String(shifted.getUTCMinutes()).padStart(2, '0'),
+          String(shifted.getUTCSeconds()).padStart(2, '0')
+        ].join(':');
+      }
+
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return raw;
+      parsed.setHours(parsed.getHours() + hours);
+      return parsed.toISOString();
+    }
+
+    function sanitizeKingPostRow(row) {
+      return {
+        contractor1: row?.asbuilt_Contractor1 ?? row?.contractor1 ?? null,
+        asbuilt_depth: row?.asbuilt_depth ?? null,
+        asbuilt_depthdrillingfromplatform: row?.asbuilt_DepthDrillingFromPlatform ?? row?.asbuilt_depthdrillingfromplatform ?? null,
+        asbuilt_drillingEnd: shiftKingPostDateTime(row?.asbuilt_DrillingEnd ?? row?.asbuilt_drillingEnd ?? null),
+        asbuilt_drillingStart: shiftKingPostDateTime(row?.asbuilt_DrillingStart ?? row?.asbuilt_drillingStart ?? null),
+        asbuilt_durationdrilling: row?.asbuilt_DurationDrilling ?? row?.asbuilt_durationdrilling ?? null,
+        asbuilt_levelplatform: row?.asbuilt_LevelPlatform ?? row?.asbuilt_levelplatform ?? null,
+        asbuilt_leveltoe: row?.asbuilt_LevelToe ?? row?.asbuilt_leveltoe ?? null,
+        asbuilt_overexcavation: row?.asbuilt_overexcavation ?? row?.asbuilt_Overexcavation ?? null,
+        asbuilt_rig1: row?.asbuilt_Rig1 ?? row?.asbuilt_rig1 ?? null,
+        asbuilt_rig1depth: row?.asbuilt_Rig1Depth ?? row?.asbuilt_rig1depth ?? null,
+        asbuilt_textfield: row?.asbuilt_TextField ?? row?.asbuilt_textfield ?? null,
+        asbuilt_wir: shiftKingPostDateTime(row?.asbuilt_WIR ?? row?.asbuilt_wir ?? null),
+        asbuilt_x: row?.asbuilt_X ?? row?.asbuilt_x ?? null,
+        asbuilt_y: row?.asbuilt_Y ?? row?.asbuilt_y ?? null,
+        beamInstallation: shiftKingPostDateTime(row?.BeamInstallation ?? row?.beamInstallation ?? row?.beaminstallation ?? null),
+        building: row?.Building ?? row?.building ?? null,
+        design_depthdrilling: row?.design_DepthDrilling ?? row?.design_depthdrilling ?? null,
+        design_levelplatform: row?.design_LevelPlatform ?? row?.design_levelplatform ?? null,
+        design_leveltoe: row?.design_LevelToe ?? row?.design_leveltoe ?? null,
+        design_leveltopofshoring: row?.design_LevelTopOfShoring ?? row?.design_leveltopofshoring ?? null,
+        design_x: row?.design_X ?? row?.design_x ?? null,
+        design_y: row?.design_Y ?? row?.design_y ?? null,
+        design_back_x: row?.design_back_X ?? row?.design_Back_X ?? row?.design_back_x ?? null,
+        design_back_y: row?.design_back_Y ?? row?.design_Back_Y ?? row?.design_back_y ?? null,
+        elementType: row?.ElementType ?? row?.elementType ?? 'KingPost',
+        isInstalled: row?.IsInstalled ?? row?.isInstalled ?? row?.isinstalled ?? null,
+        operationalStatus: row?.OperationalStatus ?? row?.operationalStatus ?? row?.operationalstatus ?? null,
+        pileId: row?.PileID ?? row?.pileId ?? row?.pileid ?? null,
+        plot: row?.Plot ?? row?.plot ?? null,
+        profile: row?.Profile ?? row?.profile ?? null,
+        project: row?.Project ?? row?.project ?? null,
+        section: row?.Section ?? row?.section ?? null
+      };
+    }
+
+    function dltmToWgs84(x, y) {
+      try {
+        const converted = proj4('EPSG:3997', 'WGS84', [Number(x), Number(y)]);
+        return Array.isArray(converted) && converted.length === 2 ? converted : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function normalizeDateString(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const d = new Date(raw);
+      if (!isNaN(d)) {
+        const y = d.getUTCFullYear();
+        const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const da = String(d.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${da}`;
+      }
+      return '';
+    }
+
+    function formatDateLabel(value) {
+      if (!value) return '—';
+      const d = new Date(value);
+      if (!isNaN(d)) return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'UTC' });
+      return String(value);
+    }
+    function formatDateTime(value) {
+      if (!value) return '—';
+      const d = new Date(value);
+      if (!isNaN(d)) {
+        return d.toLocaleString('en-GB', {
+          year: 'numeric', month: 'short', day: '2-digit',
+          hour: '2-digit', minute: '2-digit'
+        });
+      }
+      return String(value);
+    }
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+    }
+
+    async function fetchWorkerJson(fileKey) {
+      const url = new URL(DATA_WORKER_URL);
+      url.searchParams.set('file', fileKey);
+      const res = await fetch(url.toString(), {
+        cache: 'no-store',
+        headers: {
+          'x-api-key': DATA_WORKER_API_KEY
+        }
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function extractPileList(data) {
+      const payload = data?.body ?? data;
+      if (Array.isArray(payload)) {
+        if (payload.every(item => item && typeof item === 'object' && Array.isArray(item.piles))) {
+          return payload.flatMap(item => {
+            const project = normalizeText(item.project || item.Project);
+            const plot = normalizeText(item.plot || item.Plot);
+            return item.piles.map(pile => ({
+              ...pile,
+              project: normalizeText(pile.project || pile.Project || project),
+              plot: normalizeText(pile.plot || pile.Plot || plot)
+            }));
+          });
+        }
+        return payload.map(row => ({
+          ...row,
+          project: normalizeText(row?.project || row?.Project),
+          plot: normalizeText(row?.plot || row?.Plot)
+        }));
+      }
+      if (payload && typeof payload === 'object' && Array.isArray(payload.piles)) {
+        const project = normalizeText(payload.project || payload.Project);
+        const plot = normalizeText(payload.plot || payload.Plot);
+        return payload.piles.map(pile => ({
+          ...pile,
+          project: normalizeText(pile.project || pile.Project || project),
+          plot: normalizeText(pile.plot || pile.Plot || plot)
+        }));
+      }
+      return [];
+    }
+
+    function extractKingPostSourceRows(data) {
+      const payload = data?.body ?? data;
+      if (Array.isArray(payload)) return payload;
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.rows)) return payload.rows;
+        if (Array.isArray(payload.kingposts)) return payload.kingposts;
+        if (Array.isArray(payload.kingPosts)) return payload.kingPosts;
+        if (Array.isArray(payload.items)) return payload.items;
+      }
+      return [];
+    }
+
+    function isExecutedRow(row) { return !!row.isExecuted; }
+    function getPileDepth(row) {
+      return isExecutedRow(row) ? parseNumber(row.asbuilt_depth) : parseNumber(row.design_depth);
+    }
+    function getVisiblePileHeight(row) { return getPileDepth(row); }
+    function getPileRadiusMeters(row) {
+      const diaMm = parseNumber(row.diameter);
+      const actualRadius = diaMm > 0 ? diaMm / 2000 : 0.5;
+      return Math.max(actualRadius * DISPLAY_RADIUS_SCALE, MIN_DISPLAY_RADIUS_M);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function parseKingPostProfile(profile) {
+      const text = normalizeText(profile).toUpperCase();
+      const match = text.match(/(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)\s*[Xx]\s*(\d+(?:\.\d+)?)/);
+      const depthMm = match ? parseNumber(match[1]) : 400;
+      const widthMm = match ? parseNumber(match[2]) : 200;
+      const weight = match ? parseNumber(match[3]) : 0;
+      const depthM = Math.max(depthMm / 1000, 0.18);
+      // Visualization-first tuning:
+      // keep the longitudinal depth from the profile so the element does not
+      // extend past the front/back points, but thicken the transverse section
+      // slightly so it stays readable in 2D plan view.
+      const widthM = Math.max((widthMm / 1000) * 1.95, 0.3);
+      const flangeThickness = clamp(depthM * 0.135, 0.055, 0.11);
+      const webThickness = clamp(widthM * 0.2 + (weight / 7600), 0.04, Math.min(widthM * 0.42, 0.082));
+      return {
+        profile: text || 'UB',
+        depthM,
+        widthM,
+        flangeThickness,
+        webThickness
+      };
+    }
+
+    function isInstalledKingPostRow(row) {
+      const flag = normalizeText(row?.isInstalled).toLowerCase();
+      return flag === 'true' || flag === 'yes' || flag === '1' || !!normalizeText(row?.beamInstallation);
+    }
+
+    function isReadyToInstallKingPostRow(row) {
+      return normalizeText(row?.operationalStatus).toLowerCase() === 'readytoinstall';
+    }
+
+    function getKingPostStateKey(row) {
+      if (isInstalledKingPostRow(row)) return 'installed';
+      if (isReadyToInstallKingPostRow(row)) return 'ready';
+      return 'pending';
+    }
+
+    function getKingPostColor(row) {
+      const state = getKingPostStateKey(row);
+      if (state === 'installed') return MAP_PREMIUM.colors.kingpostInstalled;
+      if (state === 'ready') return MAP_PREMIUM.colors.kingpostReady;
+      return MAP_PREMIUM.colors.kingpostPending;
+    }
+
+    function getKingPostEmissiveColor(row) {
+      const state = getKingPostStateKey(row);
+      if (state === 'installed') return MAP_PREMIUM.colors.kingpostInstalledEmissive;
+      if (state === 'ready') return MAP_PREMIUM.colors.kingpostReadyEmissive;
+      return MAP_PREMIUM.colors.kingpostPendingEmissive;
+    }
+
+    function getKingPostEdgeColor(record) {
+      const baseColor = new THREE.Color(record?.color ?? MAP_PREMIUM.colors.kingpostPending);
+      return baseColor.clone().lerp(new THREE.Color(0x1a2129), 0.34);
+    }
+
+    function getKingPostHighlightEdgeColor(record) {
+      const baseColor = new THREE.Color(record?.color ?? MAP_PREMIUM.colors.kingpostPending);
+      return baseColor.clone().lerp(new THREE.Color(0xf7fbff), 0.24);
+    }
+
+    function getKingPostRotationRadians(row) {
+      const frontLngLat = dltmToWgs84(row?.design_x, row?.design_y);
+      const backLngLat = dltmToWgs84(row?.design_back_x, row?.design_back_y);
+      if (!frontLngLat || !backLngLat) return 0;
+      const frontMerc = mapboxgl.MercatorCoordinate.fromLngLat(frontLngLat, 0);
+      const backMerc = mapboxgl.MercatorCoordinate.fromLngLat(backLngLat, 0);
+      const dx = backMerc.x - frontMerc.x;
+      const dy = backMerc.y - frontMerc.y;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || (Math.abs(dx) < 1e-12 && Math.abs(dy) < 1e-12)) {
+        return 0;
+      }
+      // The UB profile web centerline is authored along the local +Y axis.
+      // Rotate by -90deg from the vector angle so that the web follows the
+      // front/back reference points instead of the local +X axis.
+      return Math.atan2(dy, dx) - (Math.PI / 2);
+    }
+
+
+    function normalizeTestsValue(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+    function buildMapRecordKey(elementType, row, idValue, index) {
+      return [
+        elementType,
+        normalizeText(row?.project || row?.Project),
+        normalizeText(row?.plot || row?.Plot),
+        normalizeText(idValue),
+        normalizeText(row?.design_x),
+        normalizeText(row?.design_y),
+        String(index ?? '')
+      ].join('|');
+    }
+    function getTestType(row) {
+      const raw = normalizeTestsValue(row.tests);
+      if (!raw) return '';
+      if (raw.includes('sonic')) return 'sonic';
+      if (raw.includes('dynamic')) return 'dynamic';
+      return '';
+    }
+    function buildCirclePolygonFromProjected(x, y, radiusM, steps = 64) {
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y)) || !Number.isFinite(Number(radiusM)) || Number(radiusM) <= 0) return null;
+      const coords = [];
+      for (let i = 0; i <= steps; i++) {
+        const angle = (i / steps) * Math.PI * 2;
+        const px = Number(x) + Math.cos(angle) * Number(radiusM);
+        const py = Number(y) + Math.sin(angle) * Number(radiusM);
+        const lngLat = dltmToWgs84(px, py);
+        if (!lngLat) return null;
+        coords.push(lngLat);
+      }
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [coords]
+        }
+      };
+    }
+    function buildRectanglePolygonFromProjected(x, y, halfSizeM) {
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y)) || !Number.isFinite(Number(halfSizeM)) || Number(halfSizeM) <= 0) return null;
+      const corners = [
+        [Number(x) - Number(halfSizeM), Number(y) - Number(halfSizeM)],
+        [Number(x) + Number(halfSizeM), Number(y) - Number(halfSizeM)],
+        [Number(x) + Number(halfSizeM), Number(y) + Number(halfSizeM)],
+        [Number(x) - Number(halfSizeM), Number(y) + Number(halfSizeM)],
+        [Number(x) - Number(halfSizeM), Number(y) - Number(halfSizeM)]
+      ];
+      const lngLats = [];
+      for (const [px, py] of corners) {
+        const lngLat = dltmToWgs84(px, py);
+        if (!lngLat) return null;
+        lngLats.push(lngLat);
+      }
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [lngLats]
+        }
+      };
+    }
+    function buildTestShapeFeatures(rows) {
+      const features = [];
+      rows.forEach(row => {
+        const testType = getTestType(row);
+        if (!testType) return;
+        const baseRadius = getPileRadiusMeters(row) * 1.16;
+        const feature = testType === 'dynamic'
+          ? buildRectanglePolygonFromProjected(row.design_x, row.design_y, baseRadius)
+          : buildCirclePolygonFromProjected(row.design_x, row.design_y, baseRadius, 72);
+        if (!feature) return;
+        feature.properties = {
+          id: normalizeId(row.id),
+          testType
+        };
+        features.push(feature);
+      });
+      return features;
+    }
+    function addTestRings() {
+      const sourceId = 'pile-test-rings';
+      const layerId = 'pile-test-rings-line';
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      const features = buildTestShapeFeatures(allPiles);
+      if (!features.length) return;
+      const data = {
+        type: 'FeatureCollection',
+        features
+      };
+      map.addSource(sourceId, { type: 'geojson', data });
+      map.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'testType'],
+            'sonic', '#2D7FF9',
+            'dynamic', '#B784D7',
+            '#2D7FF9'
+          ],
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            16, 1.5,
+            18, 2.2,
+            20, 3.4,
+            22, 5.2
+          ],
+          'line-opacity': 0.95
+        }
+      });
+    }
+
+    function getExecutionDateKey(row) {
+      const concreteEndRaw = row?.asbuilt_concreteEnd || row?.asbuilt_concreteend || row?.asbuilt_ConcreteEnd;
+      const concreteEnd = concreteEndRaw ? new Date(concreteEndRaw) : null;
+
+      if (concreteEnd instanceof Date && !Number.isNaN(concreteEnd.getTime())) {
+        const d = new Date(concreteEnd);
+        const totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
+        if (totalMinutes < (7 * 60)) {
+          d.setUTCDate(d.getUTCDate() - 1);
+        }
+        return d.toISOString().slice(0, 10);
+      }
+
+      return normalizeDateString(
+        row?.castingDate ||
+        row?.asbuilt_concreteStart
+      );
+    }
+
+    function getLatestExecutionDateKey(rows) {
+      let latestKey = '';
+      (Array.isArray(rows) ? rows : []).forEach(row => {
+        if (!isExecutedRow(row)) return;
+        const executionKey = getExecutionDateKey(row);
+        if (executionKey && (!latestKey || executionKey > latestKey)) {
+          latestKey = executionKey;
+        }
+      });
+      return latestKey;
+    }
+
+    function isYesterdayExecutedRow(row, latestExecutionKey) {
+      return !!latestExecutionKey && isExecutedRow(row) && getExecutionDateKey(row) === latestExecutionKey;
+    }
+
+    function getPileColor(row, latestExecutionKey) {
+      return isYesterdayExecutedRow(row, latestExecutionKey)
+        ? MAP_PREMIUM.colors.yesterday
+        : (isExecutedRow(row) ? MAP_PREMIUM.colors.executed : MAP_PREMIUM.colors.remaining);
+    }
+    function getBaseOpacityForRecord(record) {
+      if (record?.elementType === 'kingpost') {
+        if (record?.stateKey === 'ready') return 0.94;
+        if (record?.stateKey === 'installed') return 0.9;
+        return 0.68;
+      }
+      if (record?.executedYesterday) return Math.min(0.98, allBaseOpacity + 0.34);
+      if (record?.executed) return Math.min(0.96, allBaseOpacity + 0.24);
+      return Math.max(0.1, allBaseOpacity - 0.08);
+    }
+    function getNormalOpacity(record) {
+      return Math.max(0.05, getBaseOpacityForRecord(record));
+    }
+
+    function buildPileRecords(rows) {
+      const latestExecutionKey = getLatestExecutionDateKey(rows);
+      return rows.map((row, index) => {
+        const lngLat = dltmToWgs84(row.design_x, row.design_y);
+        if (!lngLat) return null;
+        const id = normalizeId(row.id);
+        return {
+          row,
+          id,
+          recordKey: buildMapRecordKey('pile', row, id, index),
+          elementType: 'pile',
+          lngLat,
+          radiusM: getPileRadiusMeters(row),
+          heightM: getVisiblePileHeight(row),
+          color: getPileColor(row, latestExecutionKey),
+          executed: isExecutedRow(row),
+          executedYesterday: isYesterdayExecutedRow(row, latestExecutionKey)
+        };
+      }).filter(Boolean);
+    }
+
+    function buildKingPostRecords(rows) {
+      return rows.map((row, index) => {
+        const frontLngLat = dltmToWgs84(row.design_x, row.design_y);
+        const backLngLat = dltmToWgs84(row.design_back_x, row.design_back_y);
+        const centerLngLat = (
+          Number.isFinite(Number(row.design_x)) &&
+          Number.isFinite(Number(row.design_y)) &&
+          Number.isFinite(Number(row.design_back_x)) &&
+          Number.isFinite(Number(row.design_back_y))
+        )
+          ? dltmToWgs84(
+              (Number(row.design_x) + Number(row.design_back_x)) / 2,
+              (Number(row.design_y) + Number(row.design_back_y)) / 2
+            )
+          : null;
+        const lngLat = centerLngLat || frontLngLat;
+        if (!lngLat) return null;
+        const profile = parseKingPostProfile(row.profile);
+        const heightM = Math.max(parseNumber(row.design_depthdrilling), 0.5);
+        const stateKey = getKingPostStateKey(row);
+        const id = normalizeId(row.pileId);
+        return {
+          row,
+          id,
+          recordKey: buildMapRecordKey('kingpost', row, id, index),
+          elementType: 'kingpost',
+          lngLat,
+          frontLngLat,
+          backLngLat,
+          radiusM: Math.max(profile.depthM, profile.widthM) * 0.55,
+          heightM,
+          profile,
+          color: getKingPostColor(row),
+          executed: stateKey === 'installed',
+          executedYesterday: false,
+          installed: stateKey === 'installed',
+          readyToInstall: stateKey === 'ready',
+          stateKey,
+          rotationZ: getKingPostRotationRadians(row)
+        };
+      }).filter(Boolean);
+    }
+
+    function getFocusedElementRecords(scope) {
+      if (!scope) {
+        return [...pileRecords, ...kingPostRecords];
+      }
+      const scopedPiles = allPiles.filter(row => matchesScope(row, scope));
+      const scopedKingPosts = allKingPosts.filter(row => matchesScope(row, scope));
+      if (!scopedPiles.length && !scopedKingPosts.length) {
+        const projectOnlyScope = { ...scope, plot: '' };
+        const projectOnlyPiles = allPiles.filter(row => matchesScope(row, projectOnlyScope));
+        const projectOnlyKingPosts = allKingPosts.filter(row => matchesScope(row, projectOnlyScope));
+        if (projectOnlyPiles.length || projectOnlyKingPosts.length) {
+          return [
+            ...buildPileRecords(projectOnlyPiles),
+            ...buildKingPostRecords(projectOnlyKingPosts)
+          ];
+        }
+        return [...pileRecords, ...kingPostRecords];
+      }
+      return [
+        ...buildPileRecords(scopedPiles),
+        ...buildKingPostRecords(scopedKingPosts)
+      ];
+    }
+
+    function getCurrentScopedElementRecords() {
+      const scope = getActiveScope();
+      const scoped = [
+        ...pileRecords.filter(record => matchesScope(record.row, scope)),
+        ...kingPostRecords.filter(record => matchesScope(record.row, scope))
+      ];
+      return scoped.length ? scoped : [...pileRecords, ...kingPostRecords];
+    }
+
+    function getStrictScopedElementRecords() {
+      const scope = getActiveScope();
+      return [
+        ...pileRecords.filter(record => matchesScope(record.row, scope)),
+        ...kingPostRecords.filter(record => matchesScope(record.row, scope))
+      ];
+    }
+
+    function getLabelLodSettings() {
+      const zoom = map.getZoom();
+      const touchScale = supportsHoverInput ? 1 : 0.72;
+      if (zoom < 15.8) return { show: false, showType: false, maxCount: 0 };
+      if (zoom < 16.6) return { show: true, showType: false, maxCount: Math.max(18, Math.round(40 * touchScale)) };
+      if (zoom < 17.5) return { show: true, showType: false, maxCount: Math.max(36, Math.round(90 * touchScale)) };
+      if (zoom < 18.1) return { show: true, showType: false, maxCount: Math.max(70, Math.round(180 * touchScale)) };
+      if (zoom < 18.55) return { show: true, showType: true, maxCount: Math.max(140, Math.round(340 * touchScale)) };
+      return { show: true, showType: true, maxCount: Number.MAX_SAFE_INTEGER };
+    }
+
+    function sampleRecordsEvenly(records, maxCount) {
+      if (!Array.isArray(records) || maxCount <= 0) return [];
+      if (records.length <= maxCount) return records.slice();
+      const step = records.length / maxCount;
+      const sampled = [];
+      for (let i = 0; i < maxCount; i += 1) {
+        sampled.push(records[Math.floor(i * step)]);
+      }
+      return sampled;
+    }
+
+    function getLabelRecordsForCurrentView() {
+      const lod = getLabelLodSettings();
+      if (!lod.show) return { records: [], showType: false };
+      const scoped = getCurrentScopedElementRecords().sort((a, b) => {
+        if (a.elementType !== b.elementType) return a.elementType.localeCompare(b.elementType);
+        return String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true, sensitivity: 'base' });
+      });
+      const featuredKeys = new Set([pileLayer?.highlightedId, pileLayer?.hoveredId].filter(Boolean));
+      const featured = scoped.filter(record => featuredKeys.has(record.recordKey));
+      const remaining = scoped.filter(record => !featuredKeys.has(record.recordKey));
+      const sampled = sampleRecordsEvenly(remaining, Math.max(0, lod.maxCount - featured.length));
+      const merged = [...featured, ...sampled];
+      const deduped = [];
+      const seen = new Set();
+      merged.forEach(record => {
+        if (!record?.recordKey || seen.has(record.recordKey)) return;
+        seen.add(record.recordKey);
+        deduped.push(record);
+      });
+      return { records: deduped, showType: lod.showType };
+    }
+
+    function getInteractionRecordsForCurrentView() {
+      return getCurrentScopedElementRecords();
+    }
+
+    function getRecordCentroid(records) {
+      if (!records.length) return DEFAULT_SITE_CENTER;
+      const sum = records.reduce((acc, rec) => {
+        acc[0] += rec.lngLat[0];
+        acc[1] += rec.lngLat[1];
+        return acc;
+      }, [0, 0]);
+      return [sum[0] / records.length, sum[1] / records.length];
+    }
+
+    function getRecordBounds(records) {
+      if (!records.length) return null;
+      let minLng = Infinity;
+      let maxLng = -Infinity;
+      let minLat = Infinity;
+      let maxLat = -Infinity;
+
+      records.forEach(rec => {
+        const lng = Number(rec?.lngLat?.[0]);
+        const lat = Number(rec?.lngLat?.[1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        minLng = Math.min(minLng, lng);
+        maxLng = Math.max(maxLng, lng);
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+      });
+
+      if (!Number.isFinite(minLng) || !Number.isFinite(maxLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLat)) {
+        return null;
+      }
+
+      // Add small geographic padding so piles are not touching viewport edges.
+      const lngPad = Math.max((maxLng - minLng) * 0.08, 0.0002);
+      const latPad = Math.max((maxLat - minLat) * 0.08, 0.0002);
+
+      return new mapboxgl.LngLatBounds(
+        [minLng - lngPad, minLat - latPad],
+        [maxLng + lngPad, maxLat + latPad]
+      );
+    }
+
+    function boundsToPolygonCoordinates(bounds) {
+      if (!bounds) return null;
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      if (!sw || !ne) return null;
+      return [[
+        [sw.lng, sw.lat],
+        [ne.lng, sw.lat],
+        [ne.lng, ne.lat],
+        [sw.lng, ne.lat],
+        [sw.lng, sw.lat]
+      ]];
+    }
+
+    function buildProjectFocusGeoJson(scope) {
+      const focusedRecords = getFocusRecords(getFocusedElementRecords(scope));
+      const bounds = getRecordBounds(focusedRecords);
+      const focusCoords = boundsToPolygonCoordinates(bounds);
+      if (!focusCoords) {
+        return {
+          type: 'FeatureCollection',
+          features: []
+        };
+      }
+      const outsideCoords = [[
+        [-180, -85],
+        [180, -85],
+        [180, 85],
+        [-180, 85],
+        [-180, -85]
+      ], focusCoords[0]];
+      return {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { zone: 'outside' },
+            geometry: {
+              type: 'Polygon',
+              coordinates: outsideCoords
+            }
+          },
+          {
+            type: 'Feature',
+            properties: { zone: 'inside' },
+            geometry: {
+              type: 'Polygon',
+              coordinates: focusCoords
+            }
+          }
+        ]
+      };
+    }
+
+    function getFocusRecords(records) {
+      const valid = (Array.isArray(records) ? records : []).filter(rec => {
+        const lng = Number(rec?.lngLat?.[0]);
+        const lat = Number(rec?.lngLat?.[1]);
+        return Number.isFinite(lng) && Number.isFinite(lat);
+      });
+      if (valid.length < 4) return valid;
+
+      const sortedLng = valid.map(rec => Number(rec.lngLat[0])).sort((a, b) => a - b);
+      const sortedLat = valid.map(rec => Number(rec.lngLat[1])).sort((a, b) => a - b);
+      const mid = Math.floor(valid.length / 2);
+      const medianLng = valid.length % 2 ? sortedLng[mid] : (sortedLng[mid - 1] + sortedLng[mid]) / 2;
+      const medianLat = valid.length % 2 ? sortedLat[mid] : (sortedLat[mid - 1] + sortedLat[mid]) / 2;
+
+      const distances = valid.map(rec => {
+        const lng = Number(rec.lngLat[0]);
+        const lat = Number(rec.lngLat[1]);
+        const dx = lng - medianLng;
+        const dy = lat - medianLat;
+        return Math.sqrt(dx * dx + dy * dy);
+      }).sort((a, b) => a - b);
+
+      const medianDistance = valid.length % 2
+        ? distances[mid]
+        : (distances[mid - 1] + distances[mid]) / 2;
+      const distanceThreshold = Math.max(medianDistance * 6, 0.0008);
+      const clustered = valid.filter(rec => {
+        const lng = Number(rec.lngLat[0]);
+        const lat = Number(rec.lngLat[1]);
+        const dx = lng - medianLng;
+        const dy = lat - medianLat;
+        return Math.sqrt(dx * dx + dy * dy) <= distanceThreshold;
+      });
+
+      return clustered.length >= Math.max(3, Math.ceil(valid.length * 0.5)) ? clustered : valid;
+    }
+
+    function getPileCentroid(records) {
+      return getRecordCentroid(records);
+    }
+
+    function getPileBounds(records) {
+      return getRecordBounds(records);
+    }
+
+    function todayKey() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function currentShiftDateKey(offsetDays = 0) {
+      const now = new Date();
+      const shiftDate = new Date(now);
+      const totalMinutes = shiftDate.getHours() * 60 + shiftDate.getMinutes();
+      if (totalMinutes < (7 * 60)) {
+        shiftDate.setDate(shiftDate.getDate() - 1);
+      }
+      if (offsetDays) {
+        shiftDate.setDate(shiftDate.getDate() + offsetDays);
+      }
+      const y = shiftDate.getFullYear();
+      const m = String(shiftDate.getMonth() + 1).padStart(2, '0');
+      const d = String(shiftDate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function aggregateDailyData(rows) {
+      const byDay = new Map();
+      rows.filter(isExecutedRow).forEach(row => {
+        const dateKey = getExecutionDateKey(row);
+        if (!dateKey) return;
+        if (!byDay.has(dateKey)) byDay.set(dateKey, { date: dateKey, pileCount: 0, depth: 0, concreteQty: 0 });
+        const item = byDay.get(dateKey);
+        item.pileCount += 1;
+        item.depth += parseNumber(row.asbuilt_depth);
+        item.concreteQty += parseNumber(row.asbuilt_concreteQty);
+      });
+
+      const sorted = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
+      if (!sorted.length) return sorted;
+
+      const startDate = new Date(sorted[0].date + 'T00:00:00');
+      const endDate = new Date(currentShiftDateKey(-1) + 'T00:00:00');
+      const lookup = new Map(sorted.map(d => [d.date, d]));
+      const full = [];
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        full.push(lookup.get(key) || { date: key, pileCount: 0, depth: 0, concreteQty: 0 });
+      }
+      return full;
+    }
+
+    function getChartSeries(mode) {
+      const scopedChartData = aggregateDailyData(getFocusedWidgetPiles());
+      if (mode === 'daily') return scopedChartData;
+      let piles = 0, depth = 0, qty = 0;
+      return scopedChartData.map(d => {
+        piles += Number(d.pileCount || 0);
+        depth += Number(d.depth || 0);
+        qty += Number(d.concreteQty || 0);
+        return { date: d.date, pileCount: piles, depth: depth, concreteQty: qty };
+      });
+    }
+
+    const progressCard = document.getElementById('progressCard');
+    const progressRingValue = document.getElementById('progressRingValue');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressExecuted = document.getElementById('progressExecuted');
+    const progressRemaining = document.getElementById('progressRemaining');
+    const progressTotal = document.getElementById('progressTotal');
+    const chartCard = document.getElementById('chartCard');
+    const chartContent = document.getElementById('chartContent');
+    const chartToggleBtn = document.getElementById('chartToggleBtn');
+    const progressCardBody = progressCard ? progressCard.querySelector('.progress-card-body') : null;
+    const chartArea = document.getElementById('chartArea');
+    const chartSvg = document.getElementById('chartSvg');
+    const chartTooltip = document.getElementById('chartTooltip');
+    const chartMetricLabel = document.getElementById('chartMetricLabel');
+    const chartMetricTotal = document.getElementById('chartMetricTotal');
+    const chartLegendText = document.getElementById('chartLegendText');
+    const chartDateRange = document.getElementById('chartDateRange');
+    const chartButtons = Array.from(document.querySelectorAll('.chart-btn'));
+    const chartModeButtons = Array.from(document.querySelectorAll('.chart-mode-btn'));
+    const visibilityToggleBtn = document.getElementById('visibilityToggleBtn');
+    const visibilityBody = document.querySelector('.visibility-body');
+    const allOpacitySlider = document.getElementById('allOpacitySlider');
+    const allOpacityValue = document.getElementById('allOpacityValue');
+    const planViewBtn = document.getElementById('planViewBtn');
+    const view3DBtn = document.getElementById('view3DBtn');
+    const streetBtn = document.getElementById('streetBtn');
+    const satBtn = document.getElementById('satBtn');
+    const sidePanel = document.getElementById('sidePanel');
+    const panelTitle = document.getElementById('panelTitle');
+    const panelBody = document.getElementById('panelBody');
+    const closePanel = document.getElementById('closePanel');
+    closePanel.addEventListener('click', () => sidePanel.classList.remove('open'));
+    let initialProjectZoomApplied = false;
+
+    function applyChartCollapsedState() {
+      if (!chartCard || !chartContent || !chartToggleBtn) return;
+      chartCard.classList.toggle('collapsed', isChartCollapsed);
+      chartContent.style.display = isChartCollapsed ? 'none' : 'block';
+      chartToggleBtn.textContent = isChartCollapsed ? 'Show' : 'Hide';
+    }
+    if (chartToggleBtn) chartToggleBtn.addEventListener('click', () => { isChartCollapsed = !isChartCollapsed; applyChartCollapsedState(); });
+
+    function applyVisibilityCollapsedState() {
+      if (!visibilityBody || !visibilityToggleBtn) return;
+      visibilityBody.style.display = isVisibilityCollapsed ? 'none' : 'flex';
+      const visibilityCard = document.querySelector('.visibility-card');
+      if (visibilityCard) visibilityCard.classList.toggle('compact', isVisibilityCollapsed);
+      visibilityToggleBtn.textContent = 'Fade';
+      visibilityToggleBtn.classList.toggle('active', !isVisibilityCollapsed);
+      visibilityToggleBtn.title = isVisibilityCollapsed ? 'Show pile opacity' : 'Hide pile opacity';
+    }
+    if (visibilityToggleBtn) {
+      visibilityToggleBtn.addEventListener('click', () => { isVisibilityCollapsed = !isVisibilityCollapsed; applyVisibilityCollapsedState(); });
+    }
+
+    function renderProgressCard() {
+      if (!progressRingValue || !progressPercent || !progressExecuted || !progressRemaining || !progressTotal) return;
+      const scopedRecords = getStrictScopedElementRecords();
+      const pileCount = scopedRecords.filter(record => record.elementType === 'pile').length;
+      const kingPostCount = scopedRecords.filter(record => record.elementType === 'kingpost').length;
+      const total = scopedRecords.length;
+      const executed = scopedRecords.filter(record => {
+        if (record.elementType === 'kingpost') return !!record.installed;
+        return !!record.executed;
+      }).length;
+      const remaining = Math.max(0, total - executed);
+      const percent = total ? (executed / total) * 100 : 0;
+      const subtitle = kingPostCount && !pileCount
+        ? 'Installed elements vs total elements'
+        : (pileCount && kingPostCount ? 'Completed elements vs total elements' : 'Executed piles vs total piles');
+      const radius = 40;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference * (1 - percent / 100);
+      progressRingValue.style.strokeDasharray = `${circumference}`;
+      progressRingValue.style.strokeDashoffset = `${offset}`;
+      progressPercent.textContent = `${percent.toFixed(1)}%`;
+      progressExecuted.textContent = executed.toLocaleString();
+      progressRemaining.textContent = remaining.toLocaleString();
+      progressTotal.textContent = total.toLocaleString();
+      const subtitleEl = document.querySelector('.progress-card-subtitle');
+      if (subtitleEl) subtitleEl.textContent = subtitle;
+    }
+
+    function renderChart(metric = currentMetric) {
+      if (!chartSvg || !chartMetricLabel || !chartLegendText || !chartMetricTotal || !chartDateRange) return;
+      currentMetric = metric;
+      const series = getChartSeries(currentChartMode);
+      const labelMap = { pileCount: 'No Of Piles', depth: 'Depth', concreteQty: 'Concrete Quantity' };
+      chartMetricLabel.textContent = labelMap[metric];
+      chartLegendText.textContent = `${labelMap[metric]} ${currentChartMode === 'daily' ? 'per Day' : 'Cumulative'}`;
+      chartButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.metric === metric));
+      chartModeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === currentChartMode));
+
+      if (!series.length) {
+        chartMetricTotal.textContent = '0';
+        chartDateRange.textContent = 'No data';
+        chartSvg.innerHTML = `<text x="200" y="105" fill="rgba(255,255,255,0.56)" text-anchor="middle" font-size="12">No executed data</text>`;
+        chartInteractivePoints = [];
+        return;
+      }
+
+      const values = series.map(d => Number(d[metric] || 0));
+      const total = currentChartMode === 'cumulative' ? values[values.length - 1] : values.reduce((a, b) => a + b, 0);
+      chartMetricTotal.textContent = total.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      chartDateRange.textContent = `${formatDateLabel(series[0].date)} — ${formatDateLabel(series[series.length - 1].date)}`;
+
+      const w = 400, h = 210, m = { top: 18, right: 18, bottom: 34, left: 40 };
+      const innerW = w - m.left - m.right, innerH = h - m.top - m.bottom;
+      const maxVal = Math.max(...values, 1), minVal = 0;
+      const xFor = i => m.left + (series.length === 1 ? innerW / 2 : (i / (series.length - 1)) * innerW);
+      const yFor = v => m.top + innerH - ((v - minVal) / (maxVal - minVal || 1)) * innerH;
+
+      let linePath = '', areaPath = '', barsSvg = '';
+      chartInteractivePoints = [];
+      const barWidth = Math.max(4, Math.min(18, innerW / Math.max(1, series.length) * 0.7));
+
+      series.forEach((d, i) => {
+        const x = xFor(i), y = yFor(values[i]);
+        linePath += `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)} `;
+        if (i === 0) areaPath = `M ${x.toFixed(2)} ${m.top + innerH} L ${x.toFixed(2)} ${y.toFixed(2)} `;
+        else areaPath += `L ${x.toFixed(2)} ${y.toFixed(2)} `;
+        if (currentChartMode === 'daily') {
+          const hBar = m.top + innerH - y;
+          barsSvg += `<rect data-chart-index="${i}" x="${(x - barWidth/2).toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${Math.max(1, hBar).toFixed(2)}" rx="3" fill="rgba(232,214,17,0.85)" />`;
+        }
+        chartInteractivePoints.push({ x, y, data: d, value: values[i] });
+      });
+      const lastX = xFor(series.length - 1);
+      areaPath += `L ${lastX.toFixed(2)} ${m.top + innerH} Z`;
+
+      let gridSvg = '';
+      for (let i = 0; i <= 4; i++) {
+        const val = minVal + ((maxVal - minVal) * i / 4);
+        const y = yFor(val);
+        gridSvg += `<line x1="${m.left}" y1="${y}" x2="${w - m.right}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`;
+        gridSvg += `<text x="${m.left - 8}" y="${y + 4}" fill="rgba(255,255,255,0.58)" text-anchor="end" font-size="10">${val.toFixed(metric === 'pileCount' ? 0 : 1)}</text>`;
+      }
+
+      let xLabelsSvg = '';
+      const labelCount = Math.min(series.length, 5);
+      for (let i = 0; i < labelCount; i++) {
+        const idx = Math.round((series.length - 1) * (labelCount === 1 ? 0 : i / (labelCount - 1)));
+        const x = xFor(idx);
+        xLabelsSvg += `<text x="${x}" y="${h - 12}" fill="rgba(255,255,255,0.58)" text-anchor="middle" font-size="10">${formatDateLabel(series[idx].date)}</text>`;
+      }
+
+      const barLabelsSvg = currentChartMode === 'daily'
+        ? chartInteractivePoints.map((pt, idx) => {
+          const label = metric === 'pileCount'
+            ? `${Math.round(pt.value)}`
+            : `${Number(pt.value).toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
+          return `<text data-chart-index="${idx}" x="${pt.x}" y="${Math.max(12, pt.y - 6)}" fill="rgba(255,255,255,0.92)" text-anchor="middle" font-size="10" font-weight="700">${label}</text>`;
+        }).join('')
+        : '';
+
+      const pointsSvg = currentChartMode === 'cumulative'
+        ? chartInteractivePoints.map((pt, idx) => (
+          `<circle data-chart-index="${idx}" cx="${pt.x}" cy="${pt.y}" r="4.5" fill="var(--gold)" stroke="rgba(255,255,255,0.9)" stroke-width="1.2"/>`
+        )).join('')
+        : '';
+
+      chartSvg.innerHTML = `
+        <defs>
+          <linearGradient id="chartAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(232,214,17,0.42)"/>
+            <stop offset="100%" stop-color="rgba(232,214,17,0.04)"/>
+          </linearGradient>
+        </defs>
+        ${gridSvg}
+        ${currentChartMode === 'cumulative'
+          ? `<path d="${areaPath}" fill="url(#chartAreaGrad)"></path><path d="${linePath}" fill="none" stroke="var(--gold)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>`
+          : barsSvg}
+        ${barLabelsSvg}
+        ${pointsSvg}
+        ${xLabelsSvg}`;
+    }
+
+    function showChartTooltip(index, clientX, clientY) {
+      const pt = chartInteractivePoints[index];
+      if (!pt) return;
+      chartTooltip.innerHTML = `
+        <div class="tooltip-title">${formatDateLabel(pt.data.date)}</div>
+        <div class="tooltip-row"><span class="tooltip-label">${chartMetricLabel.textContent}</span><span>${Number(pt.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
+        <div class="tooltip-row"><span class="tooltip-label">Mode</span><span>${currentChartMode === 'daily' ? 'Daily' : 'Cumulative'}</span></div>`;
+      const rect = chartArea.getBoundingClientRect();
+      const areaW = rect.width;
+      const areaH = rect.height;
+      const tipW = Math.max(160, Math.min(220, chartTooltip.offsetWidth || 180));
+      const tipH = Math.max(72, chartTooltip.offsetHeight || 90);
+      let left = clientX - rect.left + 10;
+      let top = clientY - rect.top + 10;
+      if (left + tipW > areaW - 8) left = areaW - tipW - 8;
+      if (top + tipH > areaH - 8) top = areaH - tipH - 8;
+      left = Math.max(8, left);
+      top = Math.max(8, top);
+      chartTooltip.style.left = `${left}px`;
+      chartTooltip.style.top = `${top}px`;
+      chartTooltip.classList.add('show');
+    }
+
+    if (chartArea) {
+      chartArea.addEventListener('mousemove', (e) => {
+        const target = e.target.closest('[data-chart-index]');
+        if (!target) { chartTooltip.classList.remove('show'); return; }
+        showChartTooltip(Number(target.getAttribute('data-chart-index')), e.clientX, e.clientY);
+      });
+      chartArea.addEventListener('mouseleave', () => chartTooltip.classList.remove('show'));
+    }
+    chartButtons.forEach(btn => btn.addEventListener('click', () => renderChart(btn.dataset.metric)));
+    chartModeButtons.forEach(btn => btn.addEventListener('click', () => { currentChartMode = btn.dataset.mode; renderChart(currentMetric); }));
+
+    function setMapView(mode, options = {}) {
+      const is3D = mode === '3d';
+      planViewBtn.classList.toggle('active', !is3D);
+      view3DBtn.classList.toggle('active', is3D);
+      if (pileLayer) pileLayer.setViewMode(is3D);
+      const scope = getActiveScope();
+      const focusedRecords = getFocusedElementRecords(scope);
+      const focusRecords = getFocusRecords(focusedRecords);
+      const projectBounds = getRecordBounds(focusRecords);
+      const focusedCenter = getRecordCentroid(focusRecords);
+      const duration = options.instant ? 0 : (options.quick ? MAP_PREMIUM.camera.quickDuration : MAP_PREMIUM.camera.duration);
+      const easing = MAP_PREMIUM.camera.easing;
+
+      if (projectBounds) {
+        map.fitBounds(projectBounds, {
+          padding: is3D
+            ? { top: 72, right: 58, bottom: 86, left: 58 }
+            : { top: 54, right: 48, bottom: 54, left: 48 },
+          maxZoom: is3D ? 18.28 : 17.58,
+          pitch: is3D ? MAP_PREMIUM.camera.pitch3d : 0,
+          bearing: is3D ? MAP_PREMIUM.camera.bearing3d : 0,
+          duration,
+          easing,
+          essential: true
+        });
+        return;
+      }
+
+      map.easeTo({
+        center: focusedCenter,
+        zoom: is3D ? 18.18 : 17.36,
+        pitch: is3D ? MAP_PREMIUM.camera.pitch3d : 0,
+        bearing: is3D ? MAP_PREMIUM.camera.bearing3d : 0,
+        duration,
+        easing,
+        essential: true
+      });
+    }
+    planViewBtn.addEventListener('click', () => setMapView('2d'));
+    view3DBtn.addEventListener('click', () => setMapView('3d'));
+
+    let isSatellite = false;
+
+    function syncSatelliteButtonUi() {
+      streetBtn.classList.toggle('active', !isSatellite);
+      satBtn.classList.toggle('active', isSatellite);
+    }
+
+    function getSatelliteStyleObject() {
+      return JSON.parse(JSON.stringify(SAT_STYLE_OBJECT));
+    }
+
+    function normalizeMapScene() {
+      try { if (map.getTerrain()) map.setTerrain(null); } catch (err) {}
+    }
+
+    function applyLuxuryAtmosphere() {
+      try {
+        map.setFog({
+          'range': isSatellite ? [0.9, 10.8] : [0.7, 10.2],
+          'color': isSatellite ? '#eef3f7' : '#e8eff6',
+          'high-color': isSatellite ? '#dfe8f1' : '#dae7f3',
+          'horizon-blend': isSatellite ? 0.18 : 0.16,
+          'space-color': '#9eafc0',
+          'star-intensity': 0
+        });
+      } catch (err) {}
+    }
+
+    function applyBasemapConfig() {
+      try {
+        if (isSatellite) {
+          map.setConfigProperty('basemap', 'showRoadsAndTransit', false);
+          map.setConfigProperty('basemap', 'showPedestrianRoads', false);
+          map.setConfigProperty('basemap', 'showPlaceLabels', true);
+          map.setConfigProperty('basemap', 'showPointOfInterestLabels', true);
+          map.setConfigProperty('basemap', 'showRoadLabels', true);
+          map.setConfigProperty('basemap', 'showTransitLabels', false);
+          map.setConfigProperty('basemap', 'lightPreset', 'day');
+        } else {
+          map.setConfigProperty('basemap', 'show3dObjects', true);
+          map.setConfigProperty('basemap', 'show3dBuildings', true);
+          map.setConfigProperty('basemap', 'show3dLandmarks', true);
+          map.setConfigProperty('basemap', 'show3dFacades', true);
+          map.setConfigProperty('basemap', 'lightPreset', 'day');
+        }
+      } catch (err) {}
+      applyLuxuryAtmosphere();
+    }
+
+    function removeExternalSatelliteRasterLayer() {
+      try {
+        if (map.getLayer('external-satellite-raster')) map.removeLayer('external-satellite-raster');
+      } catch (err) {}
+      try {
+        if (map.getSource('external-satellite-raster-src')) map.removeSource('external-satellite-raster-src');
+      } catch (err) {}
+    }
+
+    function ensureExternalSatelliteRasterLayer() {
+      if (!isSatellite || SATELLITE_RASTER_PROVIDER !== 'esri') {
+        removeExternalSatelliteRasterLayer();
+        return false;
+      }
+
+      if (!map.getSource('external-satellite-raster-src')) {
+        map.addSource('external-satellite-raster-src', {
+          type: 'raster',
+          tiles: [
+            'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          ],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: 'Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        });
+      }
+
+      if (!map.getLayer('external-satellite-raster')) {
+        const styleLayers = map.getStyle()?.layers || [];
+        const beforeLayerId = styleLayers.find(layer => layer.type !== 'background')?.id;
+        map.addLayer({
+          id: 'external-satellite-raster',
+          type: 'raster',
+          slot: 'bottom',
+          source: 'external-satellite-raster-src',
+          paint: {
+            'raster-opacity': 0.96,
+            'raster-fade-duration': 0,
+            'raster-contrast': 0.03,
+            'raster-saturation': -0.02
+          }
+        }, beforeLayerId);
+      }
+
+      return true;
+    }
+
+    function removeProjectFocusLayers() {
+      try { if (map.getLayer('project-focus-outline-crisp')) map.removeLayer('project-focus-outline-crisp'); } catch (err) {}
+      try { if (map.getLayer('project-focus-outline-glow')) map.removeLayer('project-focus-outline-glow'); } catch (err) {}
+      try { if (map.getLayer('project-focus-outline')) map.removeLayer('project-focus-outline'); } catch (err) {}
+      try { if (map.getLayer('project-focus-fill')) map.removeLayer('project-focus-fill'); } catch (err) {}
+      try { if (map.getSource('project-focus-src')) map.removeSource('project-focus-src'); } catch (err) {}
+    }
+
+    function ensureProjectFocusLayers() {
+      if (!isSatellite) {
+        removeProjectFocusLayers();
+        return;
+      }
+      const data = buildProjectFocusGeoJson(getActiveScope());
+      if (!map.getSource('project-focus-src')) {
+        map.addSource('project-focus-src', { type: 'geojson', data });
+      } else {
+        map.getSource('project-focus-src').setData(data);
+      }
+      const beforeLayerId = map.getLayer('threejs-piles')
+        ? 'threejs-piles'
+        : (map.getStyle()?.layers || []).find(layer => layer.type === 'symbol')?.id;
+      if (!map.getLayer('project-focus-fill')) {
+        map.addLayer({
+          id: 'project-focus-fill',
+          type: 'fill',
+          source: 'project-focus-src',
+          filter: ['==', ['get', 'zone'], 'inside'],
+          paint: {
+            'fill-color': '#ffffff',
+            'fill-opacity': 0.18
+          }
+        }, beforeLayerId);
+      }
+      if (!map.getLayer('project-focus-outline-glow')) {
+        map.addLayer({
+          id: 'project-focus-outline-glow',
+          type: 'line',
+          source: 'project-focus-src',
+          filter: ['==', ['get', 'zone'], 'inside'],
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 4.2,
+            'line-opacity': 0.12,
+            'line-blur': 1.6
+          }
+        }, beforeLayerId);
+      }
+      if (!map.getLayer('project-focus-outline')) {
+        map.addLayer({
+          id: 'project-focus-outline',
+          type: 'line',
+          source: 'project-focus-src',
+          filter: ['==', ['get', 'zone'], 'inside'],
+          paint: {
+            'line-color': '#f6fbff',
+            'line-width': 1.1,
+            'line-opacity': 0.88
+          }
+        }, beforeLayerId);
+      }
+      if (!map.getLayer('project-focus-outline-crisp')) {
+        map.addLayer({
+          id: 'project-focus-outline-crisp',
+          type: 'line',
+          source: 'project-focus-src',
+          filter: ['==', ['get', 'zone'], 'inside'],
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 0.55,
+            'line-opacity': 0.94
+          }
+        }, beforeLayerId);
+      }
+    }
+
+    function keepNativeLabelsAboveRaster() {
+      if (!map.getLayer('external-satellite-raster')) return;
+      const styleLayers = map.getStyle()?.layers || [];
+      styleLayers
+        .filter(layer => layer.type === 'symbol')
+        .forEach(layer => {
+          try { map.moveLayer(layer.id); } catch (err) {}
+        });
+    }
+
+    function setSatelliteOverlayVisibility() {
+      const styleLayers = map.getStyle()?.layers || [];
+      styleLayers.forEach(layer => {
+        if (!layer || layer.id === 'external-satellite-raster' || layer.id === 'sat-native-buildings') return;
+        const id = String(layer.id || '').toLowerCase();
+        const sourceLayer = String(layer['source-layer'] || '').toLowerCase();
+        const sourceId = String(layer.source || '').toLowerCase();
+        const isMapboxVectorOverlay =
+          layer.type !== 'symbol' &&
+          layer.type !== 'fill-extrusion' &&
+          (sourceId.includes('mapbox') || sourceId.includes('composite') || !!sourceLayer);
+        const isRoadOverlay =
+          layer.type !== 'symbol' &&
+          (
+            id.includes('road') ||
+            id.includes('street') ||
+            id.includes('bridge') ||
+            id.includes('tunnel') ||
+            id.includes('traffic') ||
+            sourceLayer.includes('road') ||
+            sourceLayer.includes('transportation')
+          );
+
+        if (!isRoadOverlay && !isMapboxVectorOverlay) return;
+
+        try {
+          map.setLayoutProperty(layer.id, 'visibility', isSatellite ? 'none' : 'visible');
+        } catch (err) {}
+      });
+    }
+
+    function keepCustomLayersOnTop() {
+      if (map.getLayer('sat-native-buildings')) {
+        try {
+          const styleLayers = map.getStyle()?.layers || [];
+          const beforeLayerId = styleLayers.find(layer => layer.type === 'symbol' && layer.id !== 'sat-native-buildings')?.id;
+          map.moveLayer('sat-native-buildings', beforeLayerId);
+        } catch (err) {}
+      }
+      keepNativeLabelsAboveRaster();
+      if (map.getLayer('threejs-piles')) {
+        try { map.moveLayer('threejs-piles'); } catch (err) {}
+      }
+    }
+
+    function ensureSatelliteNativeBuildingsLayer() {
+      if (map.getLayer('sat-native-buildings')) return;
+      if (!map.getSource('sat-buildings-src')) {
+        map.addSource('sat-buildings-src', {
+          type: 'vector',
+          url: 'mapbox://mapbox.mapbox-streets-v8'
+        });
+      }
+      try {
+        const styleLayers = map.getStyle()?.layers || [];
+        const beforeLayerId = styleLayers.find(layer => layer.type === 'symbol')?.id;
+        map.addLayer({
+          id: 'sat-native-buildings',
+          type: 'fill-extrusion',
+          source: 'sat-buildings-src',
+          'source-layer': 'building',
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          minzoom: 10,
+          paint: {
+            'fill-extrusion-color': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10, '#eef1f3',
+              16, '#f7f2e9'
+            ],
+            'fill-extrusion-height': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10, 0,
+              13,
+              [
+                'coalesce',
+                ['to-number', ['get', 'height']],
+                ['to-number', ['get', 'render_height']],
+                ['*', ['coalesce', ['to-number', ['get', 'building:levels']], 0], 3],
+                12
+              ]
+            ],
+            'fill-extrusion-base': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10, 0,
+              13,
+              [
+                'coalesce',
+                ['to-number', ['get', 'min_height']],
+                ['*', ['coalesce', ['to-number', ['get', 'min_level']], 0], 3],
+                0
+              ]
+            ],
+            'fill-extrusion-opacity': 0.78,
+            'fill-extrusion-vertical-gradient': true,
+            'fill-extrusion-emissive-strength': 0.02,
+            'fill-extrusion-ambient-occlusion-intensity': 0.42,
+            'fill-extrusion-flood-light-color': '#ffffff',
+            'fill-extrusion-flood-light-intensity': 0.16
+          }
+        }, beforeLayerId);
+      } catch (err) {
+        console.warn('[SAT buildings] layer add failed', err);
+      }
+    }
+
+    function recreateSatelliteBuildingsLayer() {
+      try {
+        if (map.getLayer('sat-native-buildings')) map.removeLayer('sat-native-buildings');
+      } catch (err) {}
+      try {
+        if (map.getSource('sat-buildings-src')) map.removeSource('sat-buildings-src');
+      } catch (err) {}
+      ensureSatelliteNativeBuildingsLayer();
+      keepCustomLayersOnTop();
+    }
+
+    function ensureSatelliteBuildingsWithRetry(attempt = 0) {
+      if (!isSatellite) return;
+      ensureSatelliteNativeBuildingsLayer();
+      keepCustomLayersOnTop();
+      if (map.getLayer('sat-native-buildings')) return;
+      if (attempt >= 8) return;
+      window.setTimeout(() => ensureSatelliteBuildingsWithRetry(attempt + 1), 180);
+    }
+
+    function refreshOperationalWidgets() {
+      clearHtmlLabels();
+      addLabelLayer();
+      renderProgressCard();
+      addTestRings();
+      keepCustomLayersOnTop();
+    }
+
+    function rebuildOperationalMapLayers() {
+      normalizeMapScene();
+      applyBasemapConfig();
+      ensureExternalSatelliteRasterLayer();
+      setSatelliteOverlayVisibility();
+      if (pileLayer && !map.getLayer(pileLayer.id)) map.addLayer(pileLayer);
+      if (pileLayer && map.getLayer(pileLayer.id) && (pileRecords.length || kingPostRecords.length) && !pileLayer.meshes.length) {
+        pileLayer.buildPiles();
+      }
+      ensureProjectFocusLayers();
+      refreshOperationalWidgets();
+      if (isSatellite) {
+        ensureSatelliteBuildingsWithRetry();
+      }
+    }
+
+/*
+      normalizeMapScene();
+      // Satellite raster — added before rings/piles so those always render on top
+      map.addSource('mapbox-satellite-overlay', {
+        type: 'raster',
+        url: 'mapbox://mapbox.satellite',
+        tileSize: 256
+      });
+      map.addLayer({
+        id: 'satellite-overlay',
+        type: 'raster',
+        source: 'mapbox-satellite-overlay',
+        layout: { visibility: 'none' },
+        paint: {
+          'raster-opacity': 0.52,
+          'raster-fade-duration': 0,
+          'raster-brightness-min': 0.08,
+          'raster-brightness-max': 0.96,
+          'raster-contrast': 0.08,
+          'raster-saturation': -0.08
+        }
+      });
+
+      // 3D buildings as custom ThreeJS layer — same pipeline as piles, always on top of raster
+      buildingLayer = new ThreeBuildingLayer('threejs-buildings');
+      map.addLayer(buildingLayer);
+      ensureSatelliteNativeBuildingsLayer();
+      keepCustomLayersOnTop();
+    }
+
+*/
+    function getPreferredViewMode() {
+      return view3DBtn.classList.contains('active') ? '3d' : '2d';
+    }
+
+    function focusCurrentProject(instant = false) {
+      const mode = getPreferredViewMode();
+      setMapView(mode, { instant });
+    }
+
+    function finalizeStyleLoad() {
+      rebuildOperationalMapLayers();
+      requestAnimationFrame(() => focusCurrentProject(true));
+      map.once('idle', () => {
+        if (isSatellite) ensureSatelliteBuildingsWithRetry();
+        else keepCustomLayersOnTop();
+        focusCurrentProject(true);
+        requestAnimationFrame(() => {
+          if (isSatellite) ensureSatelliteBuildingsWithRetry();
+          else keepCustomLayersOnTop();
+        });
+      });
+    }
+
+    streetBtn.addEventListener('click', () => {
+      if (!isSatellite) {
+        syncSatelliteButtonUi();
+        return;
+      }
+      isSatellite = false;
+      syncSatelliteButtonUi();
+      map.setStyle(BASE_STYLE_URL);
+    });
+
+    satBtn.addEventListener('click', () => {
+      if (isSatellite) {
+        syncSatelliteButtonUi();
+        return;
+      }
+      isSatellite = true;
+      syncSatelliteButtonUi();
+      map.setStyle(getSatelliteStyleObject());
+    });
+
+    function makeInfoSection(title, rows) {
+      const body = rows.map(([label, value]) => `
+        <div class="info-row">
+          <div class="info-label">${escapeHtml(label)}</div>
+          <div class="info-value">${escapeHtml(value || '—')}</div>
+        </div>`).join('');
+      return `<div class="panel-section"><div class="panel-section-title">${escapeHtml(title)}</div>${body}</div>`;
+    }
+
+    function openPilePanel(record) {
+      const row = record.row;
+      panelTitle.textContent = `${row.id || 'Pile'} • ${row.pileType || 'Details'}`;
+      panelBody.innerHTML = `
+        ${makeInfoSection('General', [
+          ['Pile ID', row.id],
+          ['Project', row.project],
+          ['Plot', row.plot || '—']
+        ])}
+        ${makeInfoSection('Design', [
+          ['Pile Type', row.pileType || '—'],
+          ['Diameter (mm)', displayValue(row.diameter, 0)],
+          ['X', displayFixed(row.design_x, 3)],
+          ['Y', displayFixed(row.design_y, 3)],
+          ['Top Of Bar', displaySigned(row.design_topOfBar, 2)],
+          ['Cutoff Level', displaySigned(row.design_cutoffLevel, 2)],
+          ['Toe Level', displaySigned(row.design_toeLevel, 2)],
+          ['Depth', `${displayValue(row.design_depth, 2)} m`]
+        ])}
+        ${makeInfoSection('Asbuilt', [
+          ['Depth', row.isExecuted ? `${displayValue(row.asbuilt_depth, 2)} m` : '—'],
+          ['Top Of Casing', row.isExecuted ? displaySigned(row.asbuilt_topOfCasing, 2) : '—'],
+          ['Concrete Qty.', row.isExecuted ? `${displayValue(row.asbuilt_concreteQty, 2)} m3` : '—'],
+          ['Casting Date', row.isExecuted ? formatDateTime(row.castingDate) : '—'],
+          ['Drilling Start', row.isExecuted ? formatDateTime(row.asbuilt_drillingStart) : '—'],
+          ['Drilling End', row.isExecuted ? formatDateTime(row.asbuilt_drillingEnd) : '—'],
+          ['Cage Start', row.isExecuted ? formatDateTime(row.asbuilt_cageStart) : '—'],
+          ['Cage End', row.isExecuted ? formatDateTime(row.asbuilt_cageEnd) : '—'],
+          ['Concrete Start', row.isExecuted ? formatDateTime(row.asbuilt_concreteStart) : '—'],
+          ['Concrete End', row.isExecuted ? formatDateTime(row.asbuilt_concreteEnd) : '—']
+        ])}`;
+      sidePanel.classList.add('open');
+    }
+
+    function openKingPostPanel(record) {
+      const row = record.row;
+      panelTitle.textContent = `${row.pileId || 'KingPost'} • ${row.profile || 'UB Profile'}`;
+      panelBody.innerHTML = `
+        ${makeInfoSection('General', [
+          ['Element ID', row.pileId],
+          ['Element Type', row.elementType || 'KingPost'],
+          ['Project', row.project],
+          ['Plot', row.plot || '-'],
+          ['Section', row.section || '-'],
+          ['Building', row.building || '-']
+        ])}
+        ${makeInfoSection('Design', [
+          ['Profile', row.profile || '-'],
+          ['X', displayFixed(row.design_x, 3)],
+          ['Y', displayFixed(row.design_y, 3)],
+          ['Top Of Shoring', displaySigned(row.design_leveltopofshoring, 2)],
+          ['Platform Level', displaySigned(row.design_levelplatform, 2)],
+          ['Toe Level', displaySigned(row.design_leveltoe, 2)],
+          ['Depth Drilling', `${displayValue(row.design_depthdrilling, 2)} m`]
+        ])}
+        ${makeInfoSection('Asbuilt', [
+          ['Status', record.installed ? 'Beam Installed' : (record.readyToInstall ? 'Pre-drilled / Ready To Install' : 'Pending')],
+          ['Installed', record.installed ? 'Yes' : 'No'],
+          ['Operational Status', row.operationalStatus || '-'],
+          ['Beam Installation', row.beamInstallation ? formatDateTime(row.beamInstallation) : '-'],
+          ['Rig', row.asbuilt_rig1 || '-'],
+          ['Rig Depth', row.asbuilt_rig1depth ? `${displayValue(row.asbuilt_rig1depth, 2)} m` : '-'],
+          ['Drilling Start', row.asbuilt_drillingStart ? formatDateTime(row.asbuilt_drillingStart) : '-'],
+          ['Drilling End', row.asbuilt_drillingEnd ? formatDateTime(row.asbuilt_drillingEnd) : '-'],
+          ['Duration', row.asbuilt_durationdrilling ? `${displayValue(row.asbuilt_durationdrilling, 2)} hr` : '-'],
+          ['Asbuilt Depth', row.asbuilt_depth ? `${displayValue(row.asbuilt_depth, 2)} m` : '-'],
+          ['Over Excavation', row.asbuilt_overexcavation ? `${displayValue(row.asbuilt_overexcavation, 2)} m` : '-'],
+          ['WIR', row.asbuilt_wir || '-']
+        ])}`;
+      sidePanel.classList.add('open');
+    }
+
+    function openMapElementPanel(record) {
+      if (record?.elementType === 'kingpost') {
+        openKingPostPanel(record);
+        return;
+      }
+      openPilePanel(record);
+    }
+
+    function getPileStateKey(record) {
+      if (record?.executedYesterday) return 'yesterday';
+      if (record?.executed) return 'executed';
+      return 'remaining';
+    }
+    function getPileBaseColor(record) {
+      const stateKey = getPileStateKey(record);
+      if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterday;
+      if (stateKey === 'executed') return MAP_PREMIUM.colors.executed;
+      return MAP_PREMIUM.colors.remaining;
+    }
+    function getPileBaseEmissive(record) {
+      const stateKey = getPileStateKey(record);
+      if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterdayEmissive;
+      if (stateKey === 'executed') return MAP_PREMIUM.colors.executedEmissive;
+      return MAP_PREMIUM.colors.remainingEmissive;
+    }
+    function getPileEmissiveIntensity(record) {
+      const stateKey = getPileStateKey(record);
+      if (stateKey === 'yesterday') return 0.62;
+      if (stateKey === 'executed') return 0.34;
+      return 0.03;
+    }
+    function getPileInteractiveVisual(record, mode = 'normal') {
+      const stateKey = getPileStateKey(record);
+      if (mode === 'selected') {
+        return {
+          color: record.executed ? (record.executedYesterday ? 0xffc162 : 0x38ff9d) : MAP_PREMIUM.colors.selected,
+          emissive: getPileBaseEmissive(record),
+          emissiveIntensity: record.executedYesterday ? 1.0 : 0.88,
+          opacity: 0.92
+        };
+      }
+      if (mode === 'hover') {
+        return {
+          color: record.executed ? (record.executedYesterday ? 0xffc162 : 0x36ff9c) : 0xffffff,
+          emissive: getPileBaseEmissive(record),
+          emissiveIntensity: record.executedYesterday ? 0.86 : 0.58,
+          opacity: Math.min(0.94, getNormalOpacity(record) + 0.2)
+        };
+      }
+      return {
+        color: getPileBaseColor(record),
+        emissive: getPileBaseEmissive(record),
+        emissiveIntensity: getPileEmissiveIntensity(record),
+        opacity: getNormalOpacity(record)
+      };
+    }
+    function createPileDisplayMesh(record, localX, localY, visualMode = 'normal', isThreeDimensional = false) {
+      const visual = getPileInteractiveVisual(record, visualMode);
+      const effectiveOpacity = isThreeDimensional ? 1 : visual.opacity;
+      const geometry = new THREE.CylinderGeometry(record.radiusM, record.radiusM, record.heightM, PILE_SEGMENTS, 1, false);
+      geometry.rotateX(Math.PI / 2);
+      const material = new THREE.MeshPhongMaterial({
+        color: visual.color,
+        transparent: !isThreeDimensional && effectiveOpacity < 0.999,
+        opacity: effectiveOpacity,
+        shininess: 145,
+        specular: 0xcfd7df,
+        flatShading: false,
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: true,
+        polygonOffset: visualMode !== 'normal',
+        polygonOffsetFactor: visualMode !== 'normal' ? -1 : 0,
+        polygonOffsetUnits: visualMode !== 'normal' ? -2 : 0
+      });
+      material.emissive = new THREE.Color(visual.emissive);
+      material.emissiveIntensity = visual.emissiveIntensity;
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.record = record;
+      mesh.userData.originalHeight = record.heightM;
+      mesh.userData.anchorMode = 'center';
+      mesh.position.set(localX, localY, -(record.heightM / 2 + 0.02));
+      mesh.frustumCulled = false;
+      mesh.renderOrder = visualMode === 'normal' ? 999 : 1001;
+      return mesh;
+    }
+
+    function refreshPileAppearance() {
+      if (!pileLayer) return;
+      pileLayer.refreshAppearance();
+    }
+
+    function bindVisibilityControls() {
+      allOpacityValue.textContent = allBaseOpacity.toFixed(2);
+      allOpacitySlider.addEventListener('input', () => {
+        allBaseOpacity = Number(allOpacitySlider.value);
+        allOpacityValue.textContent = allBaseOpacity.toFixed(2);
+        refreshPileAppearance();
+      });
+    }
+
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: BASE_STYLE_URL,
+      center: SITE_CENTER,
+      zoom: 18.7,
+      pitch: 0,
+      bearing: 0,
+      antialias: true
+    });
+    map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+    map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
+
+    function disposeThreeNode(node) {
+      if (!node) return;
+      if (node.geometry) node.geometry.dispose();
+      if (node.material) {
+        if (Array.isArray(node.material)) node.material.forEach(mat => mat && mat.dispose && mat.dispose());
+        else if (node.material.dispose) node.material.dispose();
+      }
+    }
+    function build3DTestIndicator(record) {
+      const testType = getTestType(record.row);
+      if (!testType) return null;
+      const size = record.radiusM * 1.16;
+      const zOffset = 0.10;
+      if (testType === 'sonic') {
+        const geometry = new THREE.RingGeometry(size * 0.90, size * 1.02, 56);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x2D7FF9,
+          transparent: true,
+          opacity: 0.98,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(record._local3d.x, record._local3d.y, zOffset);
+        mesh.renderOrder = 1200;
+        return mesh;
+      }
+      const points = [
+        new THREE.Vector3(-size, -size, 0),
+        new THREE.Vector3(size, -size, 0),
+        new THREE.Vector3(size, size, 0),
+        new THREE.Vector3(-size, size, 0),
+        new THREE.Vector3(-size, -size, 0)
+      ];
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({
+        color: 0xB784D7,
+        transparent: true,
+        opacity: 0.98,
+        depthTest: false,
+        depthWrite: false
+      });
+      const line = new THREE.Line(geometry, material);
+      line.position.set(record._local3d.x, record._local3d.y, zOffset);
+      line.renderOrder = 1200;
+      return line;
+    }
+
+    function createKingPostShape(profile) {
+      const halfW = profile.widthM / 2;
+      const halfD = profile.depthM / 2;
+      const flange = profile.flangeThickness;
+      const web = profile.webThickness / 2;
+      const shape = new THREE.Shape();
+      shape.moveTo(-halfW, -halfD);
+      shape.lineTo(halfW, -halfD);
+      shape.lineTo(halfW, -halfD + flange);
+      shape.lineTo(web, -halfD + flange);
+      shape.lineTo(web, halfD - flange);
+      shape.lineTo(halfW, halfD - flange);
+      shape.lineTo(halfW, halfD);
+      shape.lineTo(-halfW, halfD);
+      shape.lineTo(-halfW, halfD - flange);
+      shape.lineTo(-web, halfD - flange);
+      shape.lineTo(-web, -halfD + flange);
+      shape.lineTo(-halfW, -halfD + flange);
+      shape.closePath();
+      return shape;
+    }
+
+    const kingPostUnitGeometryCache = new Map();
+    function getKingPostProfileKey(profile) {
+      if (!profile) return 'ub-default';
+      return [
+        profile.profile || 'UB',
+        Number(profile.depthM || 0).toFixed(4),
+        Number(profile.widthM || 0).toFixed(4),
+        Number(profile.flangeThickness || 0).toFixed(4),
+        Number(profile.webThickness || 0).toFixed(4)
+      ].join('|');
+    }
+    function getKingPostUnitGeometry(profile) {
+      const key = getKingPostProfileKey(profile);
+      if (kingPostUnitGeometryCache.has(key)) return kingPostUnitGeometryCache.get(key);
+      const shape = createKingPostShape(profile);
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: 1,
+        bevelEnabled: false,
+        curveSegments: 1,
+        steps: 1
+      });
+      geometry.translate(0, 0, -1);
+      kingPostUnitGeometryCache.set(key, geometry);
+      return geometry;
+    }
+
+    function getKingPostInteractiveVisual(record, mode = 'normal') {
+      if (mode === 'selected') {
+        return {
+          color: record.stateKey === 'installed' ? 0xeef6ff : (record.stateKey === 'ready' ? 0xffd9a5 : 0xf5e6cf),
+          emissive: getKingPostEmissiveColor(record),
+          emissiveIntensity: 0.92,
+          opacity: 0.92
+        };
+      }
+      if (mode === 'hover') {
+        return {
+          color: record.stateKey === 'installed' ? 0xaad4ff : (record.stateKey === 'ready' ? 0xffc979 : 0xf0d4a9),
+          emissive: getKingPostEmissiveColor(record),
+          emissiveIntensity: record.stateKey === 'ready' ? 0.72 : 0.62,
+          opacity: Math.min(0.94, getNormalOpacity(record) + 0.2)
+        };
+      }
+      return {
+        color: record.color,
+        emissive: getKingPostEmissiveColor(record),
+        emissiveIntensity: record.stateKey === 'installed' ? 0.24 : (record.stateKey === 'ready' ? 0.2 : 0.12),
+        opacity: getNormalOpacity(record)
+      };
+    }
+
+    function applyKingPostMeshVisual(mesh, isThreeDimensional, mode = 'normal') {
+      if (!mesh?.material) return;
+      const record = mesh.userData?.record;
+      if (!record) return;
+      const visual = getKingPostInteractiveVisual(record, mode);
+      mesh.material.color.setHex(visual.color);
+      mesh.material.emissive = new THREE.Color(visual.emissive);
+      mesh.material.emissiveIntensity = visual.emissiveIntensity;
+      mesh.material.transparent = !isThreeDimensional && visual.opacity < 0.999;
+      mesh.material.opacity = isThreeDimensional ? 1 : visual.opacity;
+      mesh.material.depthTest = true;
+      mesh.material.depthWrite = true;
+      mesh.material.needsUpdate = true;
+      mesh.children.forEach(child => {
+        if (!child?.material) return;
+        child.material.depthTest = true;
+        child.material.depthWrite = false;
+        child.material.transparent = true;
+        child.material.needsUpdate = true;
+      });
+    }
+
+    function createKingPostMesh(record, localX, localY, visualMode = 'normal', isThreeDimensional = false) {
+      const height = record.heightM;
+      const shape = createKingPostShape(record.profile);
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: height,
+        bevelEnabled: false,
+        curveSegments: 1,
+        steps: 1
+      });
+      geometry.translate(0, 0, -height);
+      const material = new THREE.MeshPhongMaterial({
+        color: record.color,
+        transparent: !isThreeDimensional && getNormalOpacity(record) < 0.999,
+        opacity: isThreeDimensional ? 1 : getNormalOpacity(record),
+        shininess: 155,
+        specular: 0xffffff,
+        flatShading: false,
+        side: THREE.DoubleSide,
+        depthTest: true,
+        depthWrite: true
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      const edgeGeometry = new THREE.EdgesGeometry(geometry, 10);
+      const edgeMaterial = new THREE.LineBasicMaterial({
+        color: getKingPostEdgeColor(record),
+        transparent: true,
+        opacity: 0.96,
+        depthTest: false,
+        depthWrite: false
+      });
+      const edgeLines = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+      edgeLines.renderOrder = 1000;
+      mesh.add(edgeLines);
+      const highlightMaterial = new THREE.LineBasicMaterial({
+        color: getKingPostHighlightEdgeColor(record),
+        transparent: true,
+        opacity: 0.34,
+        depthTest: false,
+        depthWrite: false
+      });
+      const highlightEdges = new THREE.LineSegments(edgeGeometry.clone(), highlightMaterial);
+      highlightEdges.scale.set(1.012, 1.012, 1.0);
+      highlightEdges.renderOrder = 1001;
+      mesh.add(highlightEdges);
+      mesh.userData.record = record;
+      mesh.userData.originalHeight = height;
+      mesh.userData.anchorMode = 'top';
+      mesh.position.set(localX, localY, -0.02);
+      mesh.rotation.z = Number(record.rotationZ || 0);
+      record._local3d = {
+        x: localX,
+        y: localY,
+        zCenter: -0.02,
+        height,
+        effectiveHeight: height,
+        radius: record.radiusM,
+        topZ: -0.02
+      };
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 998;
+      applyKingPostMeshVisual(mesh, isThreeDimensional, visualMode);
+      return mesh;
+    }
+
+    class ThreePileLayer {
+      constructor(id) {
+        this.id = id;
+        this.type = 'custom';
+        this.renderingMode = '3d';
+        this.map = null;
+        this.camera = null;
+        this.scene = null;
+        this.renderer = null;
+        this.rootGroup = null;
+        this.meshes = [];
+        this.pileInstanceMeshes = [];
+        this.kingPostMeshes = [];
+        this.kingPostInstanceMeshes = [];
+        this.testIndicators = [];
+        this.highlightOverlayMesh = null;
+        this.hoverOverlayMesh = null;
+        this.combinedMatrix = null;
+        this.highlightedId = null;
+        this.hoveredId = null;
+        this.isSatelliteMode = false;
+        this.isThreeDimensional = false;
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.centerMerc = mapboxgl.MercatorCoordinate.fromLngLat(SITE_CENTER, 0);
+        this.modelTransform = {
+          translateX: this.centerMerc.x,
+          translateY: this.centerMerc.y,
+          translateZ: 0,
+          scale: this.centerMerc.meterInMercatorCoordinateUnits()
+        };
+      }
+
+      onAdd(map, gl) {
+        this.map = map;
+        this.camera = new THREE.Camera();
+        this.scene = new THREE.Scene();
+        this.rootGroup = new THREE.Group();
+        this.scene.add(this.rootGroup);
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.85);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xfffbf0, 1.18);
+        sun.position.set(90, -90, 145);
+        this.scene.add(sun);
+        const fill = new THREE.DirectionalLight(0xdcecff, 0.42);
+        fill.position.set(-70, 55, 105);
+        this.scene.add(fill);
+
+        this.renderer = new THREE.WebGLRenderer({
+          canvas: map.getCanvas(),
+          context: gl,
+          antialias: true
+        });
+        this.renderer.autoClear = false;
+        this.renderer.sortObjects = true;
+        this.buildPiles();
+      }
+
+      buildPiles() {
+        while (this.rootGroup.children.length) {
+          const child = this.rootGroup.children.pop();
+          disposeThreeNode(child);
+        }
+        this.meshes = [];
+        this.pileInstanceMeshes = [];
+        this.kingPostMeshes = [];
+        this.kingPostInstanceMeshes = [];
+        this.testIndicators = [];
+        this.highlightOverlayMesh = null;
+        this.hoverOverlayMesh = null;
+
+        const pileGeometry = new THREE.CylinderGeometry(1, 1, 1, PILE_SEGMENTS, 1, false);
+        pileGeometry.rotateX(Math.PI / 2);
+        const pileStateBuckets = {
+          remaining: [],
+          executed: [],
+          yesterday: []
+        };
+
+        pileRecords.forEach(record => {
+          const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
+          const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
+          const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
+          const radius = record.radiusM;
+          const height = record.heightM;
+          record._local3d = { x: localX, y: localY, zCenter: -(height / 2 + 0.02), height, effectiveHeight: height, radius, topZ: -0.02 };
+          pileStateBuckets[getPileStateKey(record)].push(record);
+
+          const indicator = build3DTestIndicator(record);
+          if (indicator) {
+            this.rootGroup.add(indicator);
+            this.testIndicators.push(indicator);
+          }
+        });
+
+        const tempMatrix = new THREE.Matrix4();
+        const tempPosition = new THREE.Vector3();
+        const tempQuaternion = new THREE.Quaternion();
+        const tempScale = new THREE.Vector3();
+        ['remaining', 'executed', 'yesterday'].forEach(stateKey => {
+          const records = pileStateBuckets[stateKey];
+          if (!records.length) return;
+          const sampleRecord = records[0];
+          const visual = getPileInteractiveVisual(sampleRecord, 'normal');
+          const material = new THREE.MeshPhongMaterial({
+            color: visual.color,
+            transparent: !this.isThreeDimensional && visual.opacity < 0.999,
+            opacity: this.isThreeDimensional ? 1 : visual.opacity,
+            shininess: 145,
+            specular: 0xcfd7df,
+            flatShading: false,
+            side: THREE.DoubleSide,
+            depthTest: true,
+            depthWrite: true
+          });
+          material.emissive = new THREE.Color(visual.emissive);
+          material.emissiveIntensity = visual.emissiveIntensity;
+          const instancedMesh = new THREE.InstancedMesh(pileGeometry, material, records.length);
+          instancedMesh.userData.records = records;
+          instancedMesh.userData.elementType = 'pile-instanced';
+          instancedMesh.frustumCulled = false;
+          instancedMesh.renderOrder = 999;
+          records.forEach((record, index) => {
+            tempPosition.set(record._local3d.x, record._local3d.y, record._local3d.zCenter);
+            tempScale.set(record.radiusM, record.radiusM, record.heightM);
+            tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+            instancedMesh.setMatrixAt(index, tempMatrix);
+            record._instanceStateKey = stateKey;
+            record._instanceIndex = index;
+          });
+          instancedMesh.instanceMatrix.needsUpdate = true;
+          this.rootGroup.add(instancedMesh);
+          this.pileInstanceMeshes.push(instancedMesh);
+          this.meshes.push(instancedMesh);
+        });
+
+        const kingPostBuckets = new Map();
+        kingPostRecords.forEach(record => {
+          const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
+          const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
+          const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
+          record._local3d = {
+            x: localX,
+            y: localY,
+            zCenter: -0.02,
+            height: record.heightM,
+            effectiveHeight: record.heightM,
+            radius: record.radiusM,
+            topZ: -0.02
+          };
+          const bucketKey = `${getKingPostProfileKey(record.profile)}|${record.stateKey}`;
+          if (!kingPostBuckets.has(bucketKey)) {
+            kingPostBuckets.set(bucketKey, {
+              profile: record.profile,
+              stateKey: record.stateKey,
+              records: []
+            });
+          }
+          kingPostBuckets.get(bucketKey).records.push(record);
+        });
+
+        kingPostBuckets.forEach(bucket => {
+          const sampleRecord = bucket.records[0];
+          const visual = getKingPostInteractiveVisual(sampleRecord, 'normal');
+          const geometry = getKingPostUnitGeometry(bucket.profile);
+          const material = new THREE.MeshPhongMaterial({
+            color: visual.color,
+            transparent: !this.isThreeDimensional && visual.opacity < 0.999,
+            opacity: this.isThreeDimensional ? 1 : visual.opacity,
+            shininess: 150,
+            specular: 0xffffff,
+            flatShading: false,
+            side: THREE.DoubleSide,
+            depthTest: true,
+            depthWrite: true
+          });
+          material.emissive = new THREE.Color(visual.emissive);
+          material.emissiveIntensity = visual.emissiveIntensity;
+          const instancedMesh = new THREE.InstancedMesh(geometry, material, bucket.records.length);
+          instancedMesh.userData.records = bucket.records;
+          instancedMesh.userData.elementType = 'kingpost-instanced';
+          instancedMesh.frustumCulled = false;
+          instancedMesh.renderOrder = 998;
+          bucket.records.forEach((record, index) => {
+            tempPosition.set(record._local3d.x, record._local3d.y, record._local3d.zCenter);
+            tempQuaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Number(record.rotationZ || 0));
+            tempScale.set(1, 1, record.heightM);
+            tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+            instancedMesh.setMatrixAt(index, tempMatrix);
+          });
+          instancedMesh.instanceMatrix.needsUpdate = true;
+          this.rootGroup.add(instancedMesh);
+          this.kingPostInstanceMeshes.push(instancedMesh);
+          this.meshes.push(instancedMesh);
+        });
+        this.syncPileOverlayMeshes();
+        this.applySatelliteMode(this.isSatelliteMode);
+      }
+
+      applySatelliteMode(enabled) {
+        this.isSatelliteMode = !!enabled;
+        [this.highlightOverlayMesh, this.hoverOverlayMesh].forEach(mesh => {
+          const record = mesh?.userData?.record;
+          const originalHeight = Number(mesh?.userData?.originalHeight || record?._local3d?.height || 0);
+          if (!mesh || !originalHeight || !record?._local3d) return;
+          const visibleHeight = originalHeight;
+          mesh.scale.z = visibleHeight / originalHeight;
+          mesh.position.z = mesh.userData.anchorMode === 'top' ? -0.02 : -(visibleHeight / 2 + 0.02);
+          record._local3d.effectiveHeight = visibleHeight;
+          record._local3d.zCenter = mesh.position.z;
+        });
+        if (this.map) this.map.triggerRepaint();
+      }
+
+      getPileRecordByKey(recordKey) {
+        if (!recordKey) return null;
+        return pileRecords.find(record => record.recordKey === recordKey) || null;
+      }
+
+      getRecordByKey(recordKey) {
+        if (!recordKey) return null;
+        return pileRecords.find(record => record.recordKey === recordKey)
+          || kingPostRecords.find(record => record.recordKey === recordKey)
+          || null;
+      }
+
+      replaceOverlayMesh(currentMesh, nextMesh) {
+        if (currentMesh) {
+          this.rootGroup.remove(currentMesh);
+          this.meshes = this.meshes.filter(mesh => mesh !== currentMesh);
+          disposeThreeNode(currentMesh);
+        }
+        if (nextMesh) {
+          this.rootGroup.add(nextMesh);
+          this.meshes.push(nextMesh);
+        }
+        return nextMesh || null;
+      }
+
+      syncPileOverlayMeshes() {
+        const selectedRecord = this.getRecordByKey(this.highlightedId);
+        const hoveredRecord = this.hoveredId && this.hoveredId !== this.highlightedId
+          ? this.getRecordByKey(this.hoveredId)
+          : null;
+
+        const selectedMesh = selectedRecord
+          ? (
+            selectedRecord.elementType === 'kingpost'
+              ? createKingPostMesh(selectedRecord, selectedRecord._local3d?.x || 0, selectedRecord._local3d?.y || 0, 'selected', this.isThreeDimensional)
+              : createPileDisplayMesh(selectedRecord, selectedRecord._local3d?.x || 0, selectedRecord._local3d?.y || 0, 'selected', this.isThreeDimensional)
+          )
+          : null;
+        const hoveredMesh = hoveredRecord
+          ? (
+            hoveredRecord.elementType === 'kingpost'
+              ? createKingPostMesh(hoveredRecord, hoveredRecord._local3d?.x || 0, hoveredRecord._local3d?.y || 0, 'hover', this.isThreeDimensional)
+              : createPileDisplayMesh(hoveredRecord, hoveredRecord._local3d?.x || 0, hoveredRecord._local3d?.y || 0, 'hover', this.isThreeDimensional)
+          )
+          : null;
+
+        this.highlightOverlayMesh = this.replaceOverlayMesh(this.highlightOverlayMesh, selectedMesh);
+        this.hoverOverlayMesh = this.replaceOverlayMesh(this.hoverOverlayMesh, hoveredMesh);
+      }
+
+      refreshAppearance() {
+        this.pileInstanceMeshes.forEach(mesh => {
+          const records = Array.isArray(mesh.userData.records) ? mesh.userData.records : [];
+          const sampleRecord = records[0];
+          if (!sampleRecord) return;
+          const visual = getPileInteractiveVisual(sampleRecord, 'normal');
+          mesh.material.color.setHex(visual.color);
+          mesh.material.emissive = new THREE.Color(visual.emissive);
+          mesh.material.emissiveIntensity = visual.emissiveIntensity;
+          mesh.material.transparent = !this.isThreeDimensional && visual.opacity < 0.999;
+          mesh.material.opacity = this.isThreeDimensional ? 1 : visual.opacity;
+          mesh.material.needsUpdate = true;
+        });
+        this.kingPostInstanceMeshes.forEach(mesh => {
+          const records = Array.isArray(mesh.userData.records) ? mesh.userData.records : [];
+          const sampleRecord = records[0];
+          if (!sampleRecord) return;
+          const visual = getKingPostInteractiveVisual(sampleRecord, 'normal');
+          mesh.material.color.setHex(visual.color);
+          mesh.material.emissive = new THREE.Color(visual.emissive);
+          mesh.material.emissiveIntensity = visual.emissiveIntensity;
+          mesh.material.transparent = !this.isThreeDimensional && visual.opacity < 0.999;
+          mesh.material.opacity = this.isThreeDimensional ? 1 : visual.opacity;
+          mesh.material.needsUpdate = true;
+        });
+        this.syncPileOverlayMeshes();
+        if (this.map) this.map.triggerRepaint();
+      }
+
+      setViewMode(isThreeDimensional) {
+        const nextValue = !!isThreeDimensional;
+        if (this.isThreeDimensional === nextValue) return;
+        this.isThreeDimensional = nextValue;
+        this.refreshAppearance();
+      }
+
+      setHighlightedPile(recordId) {
+        if (this.highlightedId === recordId) return;
+        this.highlightedId = recordId;
+        this.syncPileOverlayMeshes();
+        this.map.triggerRepaint();
+      }
+
+      setHoverPile(recordId) {
+        if (this.hoveredId === recordId) return;
+        this.hoveredId = recordId;
+        this.syncPileOverlayMeshes();
+        this.map.triggerRepaint();
+      }
+
+      pick(point) {
+        const canvas = this.map.getCanvas();
+        this.mouse.x = (point.x / canvas.clientWidth) * 2 - 1;
+        this.mouse.y = -((point.y / canvas.clientHeight) * 2 - 1);
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const hits = this.raycaster.intersectObjects(this.meshes, false);
+        if (!hits.length) return null;
+        const hit = hits[0];
+        if (hit.object?.isInstancedMesh) {
+          const records = Array.isArray(hit.object.userData.records) ? hit.object.userData.records : [];
+          if (Number.isInteger(hit.instanceId) && records[hit.instanceId]) return records[hit.instanceId];
+        }
+        return hit.object?.userData?.record || null;
+      }
+
+      projectLocalPointToScreen(localPoint) {
+        if (!this.combinedMatrix) return null;
+        const canvas = this.map.getCanvas();
+        const v = localPoint.clone().applyMatrix4(this.combinedMatrix);
+        if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) return null;
+        return {
+          x: (v.x * 0.5 + 0.5) * canvas.clientWidth,
+          y: (-v.y * 0.5 + 0.5) * canvas.clientHeight,
+          z: v.z
+        };
+      }
+
+      pickByBody(point, maxDistancePx = 16) {
+        let nearest = null;
+        let nearestDistance = Infinity;
+        for (const record of getInteractionRecordsForCurrentView()) {
+          if (!record._local3d) continue;
+          const topZ = record._local3d.topZ || -0.02;
+          const top = this.projectLocalPointToScreen(new THREE.Vector3(record._local3d.x, record._local3d.y, topZ));
+          const bodyHeight = Number(record._local3d.effectiveHeight || record._local3d.height || 0);
+          const bottom = this.projectLocalPointToScreen(new THREE.Vector3(record._local3d.x, record._local3d.y, topZ - bodyHeight));
+          if (!top || !bottom) continue;
+          const side = this.projectLocalPointToScreen(new THREE.Vector3(record._local3d.x + record._local3d.radius, record._local3d.y, topZ));
+          const radiusPx = side ? Math.max(6, Math.hypot(side.x - top.x, side.y - top.y)) : 8;
+          const distance = distancePointToSegment(point, top, bottom) - radiusPx;
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = record;
+          }
+        }
+        return nearestDistance <= maxDistancePx ? nearest : null;
+      }
+
+      render(gl, matrix) {
+        const m = new THREE.Matrix4().fromArray(matrix);
+        const l = new THREE.Matrix4()
+          .makeTranslation(this.modelTransform.translateX, this.modelTransform.translateY, this.modelTransform.translateZ)
+          .scale(new THREE.Vector3(this.modelTransform.scale, this.modelTransform.scale, this.modelTransform.scale));
+        this.combinedMatrix = m.clone().multiply(l);
+        this.camera.projectionMatrix = this.combinedMatrix.clone();
+        this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    class ThreeBuildingLayer {
+      constructor(id) {
+        this.id = id;
+        this.type = 'custom';
+        this.renderingMode = '3d';
+        this.map = null;
+        this.camera = null;
+        this.scene = null;
+        this.renderer = null;
+        this.modelTransform = null;
+        this.centerMerc = null;
+        this._visible = false;
+        this._built = false;
+        this._loading = false;
+        this._stats = { features: 0, triangles: 0 };
+        this._lastError = '';
+        this._lastSource = '';
+      }
+
+      onAdd(map, gl) {
+        this.map = map;
+        this.camera = new THREE.Camera();
+        this.scene = new THREE.Scene();
+        const ambient = new THREE.AmbientLight(0xffffff, 1.15);
+        this.scene.add(ambient);
+        const sun = new THREE.DirectionalLight(0xfff7db, 0.9);
+        sun.position.set(80, -70, 120);
+        this.scene.add(sun);
+        const fill = new THREE.DirectionalLight(0xd9e7ff, 0.45);
+        fill.position.set(-60, 40, 90);
+        this.scene.add(fill);
+        this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
+        this.renderer.autoClear = false;
+        this.centerMerc = mapboxgl.MercatorCoordinate.fromLngLat(SITE_CENTER, 0);
+        this.modelTransform = {
+          translateX: this.centerMerc.x,
+          translateY: this.centerMerc.y,
+          translateZ: 0,
+          scale: this.centerMerc.meterInMercatorCoordinateUnits()
+        };
+      }
+
+      async _fetchGeoJson() {
+        this._lastSource = 'raw-github-url';
+        const res = await fetch(BUILDINGS_RAW_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Raw URL HTTP ${res.status}`);
+        const contentType = String(res.headers.get('content-type') || '');
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (parseErr) {
+          throw new Error(`Raw URL parse failed (${contentType || 'no content-type'})`);
+        }
+      }
+
+      async loadAndBuild(onDone) {
+        if (this._built || this._loading) { if (onDone) onDone(this._built); return; }
+        this._loading = true;
+        this._lastError = '';
+        try {
+          console.log('[Buildings] fetching…');
+          const data = await this._fetchGeoJson();
+          const features = Array.isArray(data?.features)
+            ? data.features
+            : Array.isArray(data?.body)
+            ? data.body
+            : [];
+          console.log('[Buildings] features', features.length);
+          this._buildGeometry(features);
+        } catch (e) {
+          this._lastError = e && e.message ? e.message : String(e);
+          console.error('[Buildings] load error:', e);
+        }
+        this._loading = false;
+        if (onDone) onDone(this._built);
+      }
+
+      _buildGeometry(features) {
+        const cx = this.centerMerc.x;
+        const cy = this.centerMerc.y;
+        const scale = this.modelTransform.scale;
+
+        const positions = [];
+        const indices = [];
+        let usedFeatureCount = 0;
+
+        for (const feature of features) {
+          if (!feature.geometry) continue;
+          const zMin = Number((feature.properties && feature.properties.Z_Min) ?? (feature.properties && feature.properties.z_min) ?? 0) || 0;
+          const polys = feature.geometry.type === 'MultiPolygon'
+            ? feature.geometry.coordinates
+            : feature.geometry.type === 'Polygon'
+            ? [feature.geometry.coordinates]
+            : [];
+
+          for (const poly of polys) {
+            const ring = poly[0];
+            if (!ring || ring.length < 4) continue;
+            usedFeatureCount += 1;
+            const verts = ring.slice(0, -1); // drop closing vertex
+            const base = positions.length / 3;
+            for (const coord of verts) {
+              const lng = Number(coord[0]);
+              const lat = Number(coord[1]);
+              const z = coord[2] !== undefined ? Number(coord[2]) : zMin;
+              if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+              const merc = mapboxgl.MercatorCoordinate.fromLngLat([lng, lat], 0);
+              positions.push(
+                (merc.x - cx) / scale,
+                (merc.y - cy) / scale,
+                ((Number.isFinite(z) ? z : zMin) - zMin) + BUILDING_BASE_Z_M
+              );
+            }
+            const count = (positions.length / 3) - base;
+            for (let i = 1; i < count - 1; i++) {
+              indices.push(base, base + i, base + i + 1);
+            }
+          }
+        }
+
+        if (!positions.length) return;
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+          color: 0xf2eee6,
+          transparent: true,
+          opacity: 0.86,
+          shininess: 95,
+          specular: 0xffffff,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false
+        }));
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 990;
+        this.scene.add(mesh);
+
+        this._built = true;
+        this._stats = { features: usedFeatureCount, triangles: Math.floor(indices.length / 3) };
+        if (this.map) this.map.triggerRepaint();
+      }
+
+      getStats() {
+        return this._stats;
+      }
+
+      getLastError() {
+        return this._lastError;
+      }
+
+      getLastSource() {
+        return this._lastSource;
+      }
+
+      setVisible(visible) {
+        this._visible = visible;
+        if (this.map) this.map.triggerRepaint();
+      }
+
+      render(gl, matrix) {
+        if (!this._visible || !this._built) return;
+        const m = new THREE.Matrix4().fromArray(matrix);
+        const l = new THREE.Matrix4()
+          .makeTranslation(this.modelTransform.translateX, this.modelTransform.translateY, this.modelTransform.translateZ)
+          .scale(new THREE.Vector3(this.modelTransform.scale, this.modelTransform.scale, this.modelTransform.scale));
+        this.camera.projectionMatrix = m.clone().multiply(l);
+        this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+        this.renderer.clearDepth();
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    function distancePointToSegment(point, a, b) {
+      const abx = b.x - a.x, aby = b.y - a.y;
+      const abLen2 = abx * abx + aby * aby;
+      if (abLen2 === 0) return Math.hypot(point.x - a.x, point.y - a.y);
+      const t = Math.max(0, Math.min(1, ((point.x - a.x) * abx + (point.y - a.y) * aby) / abLen2));
+      const projX = a.x + t * abx;
+      const projY = a.y + t * aby;
+      return Math.hypot(point.x - projX, point.y - projY);
+    }
+
+    function getNearestMapElementRecordFromPoint(point, maxDistancePx = 30) {
+      let nearest = null, nearestDistance = Infinity;
+      for (const record of getInteractionRecordsForCurrentView()) {
+        const projected = map.project(record.lngLat);
+        const dx = projected.x - point.x, dy = projected.y - point.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearest = record;
+        }
+      }
+      return nearestDistance <= maxDistancePx ? nearest : null;
+    }
+
+    function getPileRecordFromInteraction(point, nearestMaxPx = 34) {
+      const raycastRecord = pileLayer.pick(point);
+      if (raycastRecord) return raycastRecord;
+      const bodyRecord = pileLayer.pickByBody(point, 18);
+      if (bodyRecord) return bodyRecord;
+      return getNearestMapElementRecordFromPoint(point, nearestMaxPx);
+    }
+
+    let htmlPileLabels = [];
+
+    function clearHtmlLabels() {
+      htmlPileLabels.forEach(m => m.remove());
+      htmlPileLabels = [];
+    }
+
+    function addLabelLayer() {
+      clearHtmlLabels();
+      if (isMapInteracting) return;
+      const { records, showType } = getLabelRecordsForCurrentView();
+      records.forEach(record => {
+        const wrap = document.createElement('div');
+        wrap.className = 'pile-label-marker';
+        if (isSatellite) wrap.classList.add('satellite');
+
+        const idEl = document.createElement('div');
+        idEl.className = 'pile-label-id';
+        idEl.textContent = record.id || '';
+
+        const typeEl = document.createElement('div');
+        typeEl.className = 'pile-label-type';
+        typeEl.textContent = !showType || record.elementType === 'kingpost'
+          ? ''
+          : (record.row.pileType || '');
+
+        wrap.appendChild(idEl);
+        wrap.appendChild(typeEl);
+
+        const marker = new mapboxgl.Marker({
+          element: wrap,
+          anchor: 'center',
+          offset: [0, 0]
+        })
+        .setLngLat(record.lngLat)
+        .addTo(map);
+
+        htmlPileLabels.push(marker);
+      });
+    }
+
+    async function init() {
+      const scope = getActiveScope();
+      if (!scope) return false;
+
+      const [pileData, kingPostRows] = await Promise.all([
+        fetchWorkerJson(DATA_FILE_KEYS.piles),
+        (async () => {
+          try {
+            const data = await fetchWorkerJson(DATA_FILE_KEYS.kingpost);
+            const rows = extractKingPostSourceRows(data);
+            return rows.map(sanitizeKingPostRow);
+          } catch (err) {
+            console.warn('KingPost source load skipped:', err);
+            return [];
+          }
+        })()
+      ]);
+      const rawPiles = extractPileList(pileData);
+      allPiles = rawPiles;
+      allKingPosts = kingPostRows;
+      pileRecords = buildPileRecords(allPiles);
+      kingPostRecords = buildKingPostRecords(allKingPosts);
+      chartData = aggregateDailyData(allPiles);
+      SITE_CENTER = getRecordCentroid([...pileRecords, ...kingPostRecords]);
+      map.setCenter(SITE_CENTER);
+      if (!pileLayer) {
+        pileLayer = new ThreePileLayer('threejs-piles');
+      } else {
+        pileLayer.buildPiles();
+      }
+      return true;
+    }
+
+    function ensureMapContentBootstrapped() {
+      if (map.loaded()) {
+        bootstrapMapContent();
+        return;
+      }
+      const runBootstrap = () => bootstrapMapContent();
+      map.once('load', runBootstrap);
+      map.once('style.load', runBootstrap);
+      map.once('idle', runBootstrap);
+    }
+
+    function bootstrapMapContent() {
+      if (mapContentBootstrapped) return;
+      mapContentBootstrapped = true;
+      applyChartCollapsedState();
+      bindVisibilityControls();
+      applyVisibilityCollapsedState();
+      finalizeStyleLoad();
+      map.once('idle', () => {
+        if (initialProjectZoomApplied) return;
+        initialProjectZoomApplied = true;
+        focusCurrentProject(true);
+      });
+    }
+
+    function showMapWaitingState(message = 'Waiting for dashboard context...') {
+      panelTitle.textContent = 'Project Map';
+      panelBody.innerHTML = `<div class="panel-section"><div class="panel-section-title">Status</div><div class="info-row"><div class="info-label">Message</div><div class="info-value">${escapeHtml(message)}</div></div></div>`;
+      sidePanel.classList.add('open');
+    }
+
+    async function loadMapDataForCurrentScope() {
+      const loaded = await init();
+      if (!loaded) {
+        showMapWaitingState();
+        return false;
+      }
+      sidePanel.classList.remove('open');
+      ensureMapContentBootstrapped();
+      if (mapContentBootstrapped) {
+        rebuildOperationalMapLayers();
+        refreshPileAppearance();
+        addLabelLayer();
+      }
+      return true;
+    }
+
+    loadMapDataForCurrentScope().catch(err => {
+      console.error(err);
+      panelTitle.textContent = 'Load error';
+      panelBody.innerHTML = `<div class="panel-section"><div class="panel-section-title">Error</div><div class="info-row"><div class="info-label">Message</div><div class="info-value">${escapeHtml(err.message || String(err))}</div></div></div>`;
+      sidePanel.classList.add('open');
+    });
+
+    map.on('click', e => {
+      const record = getPileRecordFromInteraction(e.point, 38);
+      if (!record) return;
+      if (pileLayer) pileLayer.setHighlightedPile(record.recordKey || record.id);
+      openMapElementPanel(record);
+    });
+
+    map.on('dragstart', () => {
+      isMapInteracting = true;
+      if (pileLayer) pileLayer.setHoverPile(null);
+      map.getCanvas().style.cursor = '';
+    });
+    map.on('rotatestart', () => {
+      isMapInteracting = true;
+      if (pileLayer) pileLayer.setHoverPile(null);
+      map.getCanvas().style.cursor = '';
+    });
+    map.on('pitchstart', () => {
+      isMapInteracting = true;
+      if (pileLayer) pileLayer.setHoverPile(null);
+      map.getCanvas().style.cursor = '';
+    });
+    map.on('moveend', () => {
+      isMapInteracting = false;
+    });
+    if (supportsHoverInput) {
+      map.on('mousemove', e => {
+        if (isMapInteracting) return;
+        if (hoverRaf) return;
+        const point = { x: e.point.x, y: e.point.y };
+        hoverRaf = requestAnimationFrame(() => {
+          hoverRaf = 0;
+          if (isMapInteracting) return;
+          const record = getPileRecordFromInteraction(point, 26);
+          const nextId = record ? (record.recordKey || record.id) : null;
+          if (nextId === lastHoverRecordKey) return;
+          lastHoverRecordKey = nextId;
+          if (pileLayer) pileLayer.setHoverPile(nextId);
+          map.getCanvas().style.cursor = record ? 'pointer' : '';
+        });
+      });
+      map.on('mouseleave', () => {
+        lastHoverRecordKey = null;
+        if (pileLayer) pileLayer.setHoverPile(null);
+        map.getCanvas().style.cursor = '';
+      });
+    } else {
+      map.getCanvas().style.cursor = '';
+      map.on('touchstart', () => {
+        lastHoverRecordKey = null;
+        if (pileLayer) pileLayer.setHoverPile(null);
+      });
+    }
+    map.on('zoomend', () => {
+      if (isMapInteracting) return;
+      addLabelLayer();
+    });
+    map.on('style.load', () => {
+      syncSatelliteButtonUi();
+      finalizeStyleLoad();
+    });
+
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'MAP_FOCUS_ANIMATE') {
+        try {
+          map.resize();
+          const mode = view3DBtn.classList.contains('active') ? '3d' : '2d';
+          setTimeout(() => setMapView(mode, { instant: false }), 40);
+        } catch (err) {}
+        return;
+      }
+        if (event.data?.type === 'AUTH_CONTEXT_UPDATED') {
+          const payload = event.data?.payload;
+          if (payload && typeof payload === 'object') {
+            try {
+              const storedRaw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+            const stored = storedRaw ? JSON.parse(storedRaw) : {};
+            const merged = {
+              ...stored,
+              ...payload,
+              selectedProject: payload.project || stored.selectedProject || stored.project,
+              selectedPlot: Object.prototype.hasOwnProperty.call(payload, 'plot')
+                ? (payload.plot ?? '')
+                : (stored.selectedPlot || stored.plot)
+            };
+              window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(merged));
+            } catch (err) {}
+          }
+          try {
+            const scope = getActiveScope();
+            if ((!allPiles.length && !allKingPosts.length) || !hasScopedElements(scope)) {
+              loadMapDataForCurrentScope().catch(err => {
+                console.error(err);
+                panelTitle.textContent = 'Load error';
+                panelBody.innerHTML = `<div class="panel-section"><div class="panel-section-title">Error</div><div class="info-row"><div class="info-label">Message</div><div class="info-value">${escapeHtml(err.message || String(err))}</div></div></div>`;
+                sidePanel.classList.add('open');
+              });
+              return;
+            }
+          if (allPiles.length || allKingPosts.length) {
+              pileRecords = buildPileRecords(allPiles);
+              kingPostRecords = buildKingPostRecords(allKingPosts);
+              chartData = aggregateDailyData(allPiles);
+              if (pileLayer) {
+                pileLayer.buildPiles();
+                refreshPileAppearance();
+                addLabelLayer();
+              }
+              renderProgressCard();
+              ensureProjectFocusLayers();
+            }
+            sidePanel.classList.remove('open');
+            setTimeout(() => focusCurrentProject(true), 40);
+          } catch (err) {}
+          return;
+        }
+    });
+  </script>
+</body>
+</html>
