@@ -919,23 +919,44 @@
     }
 
     function buildProjectLayoutLegend(pileRows, kingRows, summary) {
+      let items;
       if (pileRows.length && !kingRows.length) {
-        return [
+        items = [
           { label: 'Executed', color: '#20cf7a' },
           { label: 'Executed Last Day', color: '#ffb347' }
         ];
       }
-      if (kingRows.length && !pileRows.length) {
-        return [
+      else if (kingRows.length && !pileRows.length) {
+        items = [
           { label: 'Pre-Drilled', color: '#ffb347' },
           { label: 'Installed', color: '#20cf7a' }
         ];
       }
-      return [
-        { label: 'Complete', color: '#20cf7a' },
-        { label: 'Recent / Ready', color: '#ffb347' },
-        { label: 'Remaining', color: '#cfd6e2' }
-      ];
+      else {
+        items = [
+          { label: 'Complete', color: '#20cf7a' },
+          { label: 'Recent / Ready', color: '#ffb347' },
+          { label: 'Remaining', color: '#cfd6e2' }
+        ];
+      }
+
+      const hasSonic = pileRows.some(row => getProjectLayoutTestType(row) === 'sonic');
+      const hasDynamic = pileRows.some(row => getProjectLayoutTestType(row) === 'dynamic');
+      if (hasSonic) items.push({ label: 'Sonic Test', color: '#2D7FF9', symbol: 'ring' });
+      if (hasDynamic) items.push({ label: 'Dynamic Test', color: '#B784D7', symbol: 'square' });
+      return items;
+    }
+
+    function normalizeProjectLayoutTestsValue(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function getProjectLayoutTestType(row) {
+      const raw = normalizeProjectLayoutTestsValue(row?.tests);
+      if (!raw) return '';
+      if (raw.includes('sonic')) return 'sonic';
+      if (raw.includes('dynamic')) return 'dynamic';
+      return '';
     }
 
     function buildProjectLayoutPrintRecords(pileRows, kingRows) {
@@ -960,7 +981,8 @@
           anchorY: point.y,
           id: normalizeText(row.id) || '-',
           secondary: normalizeText(row.pileType),
-          statusKey
+          statusKey,
+          testType: getProjectLayoutTestType(row)
         };
       }).filter(Boolean);
 
@@ -1152,6 +1174,17 @@
         return `<circle cx="${record.anchor.x.toFixed(2)}" cy="${record.anchor.y.toFixed(2)}" r="7.0" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1.05" />`;
       }).join('');
 
+      const testMarkup = layoutRecords.map(record => {
+        if (record.kind !== 'pile' || !record.testType) return '';
+        if (record.testType === 'sonic') {
+          return `<circle cx="${record.anchor.x.toFixed(2)}" cy="${record.anchor.y.toFixed(2)}" r="11.2" fill="none" stroke="#2D7FF9" stroke-width="2.1" opacity="0.96" />`;
+        }
+        if (record.testType === 'dynamic') {
+          return `<rect x="${(record.anchor.x - 9.4).toFixed(2)}" y="${(record.anchor.y - 9.4).toFixed(2)}" width="18.8" height="18.8" rx="2.4" fill="none" stroke="#B784D7" stroke-width="2.1" opacity="0.96" />`;
+        }
+        return '';
+      }).join('');
+
       const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
       const labelMarkup = layoutRecords.map(record => {
         const secondary = record.secondary;
@@ -1192,6 +1225,7 @@
           <rect x="${plotBox.x}" y="${plotBox.y}" width="${plotBox.width}" height="${plotBox.height}" rx="20" fill="url(#layoutPanelFill)" stroke="rgba(19,28,39,0.08)" stroke-width="1.35" />
           ${hullPath ? `<path d="${hullPath}" fill="rgba(31,111,255,0.03)" stroke="rgba(31,111,255,0.28)" stroke-width="2" stroke-dasharray="8 8" />` : ''}
           ${shapeMarkup}
+          ${testMarkup}
           ${labelMarkup}
         </svg>
       `;
@@ -1200,12 +1234,30 @@
         ? 'Piles'
         : (summary.kingPostCount && !summary.pileCount ? 'KingPosts' : 'Elements');
       const progressLine = `${summary.completed}/${summary.total} ${completionLabel} • ${formatNumberOneDecimal(summary.progress)}% Complete`;
-      const legendMarkup = legend.map(item => `
-        <div class="sheet-legend-item">
-          <span class="sheet-legend-dot" style="background:${item.color};"></span>
-          <span>${escapeHtml(item.label)}</span>
-        </div>
-      `).join('');
+      const legendMarkup = legend.map(item => {
+        if (item.symbol === 'ring') {
+          return `
+            <div class="sheet-legend-item">
+              <span class="sheet-legend-swatch ring" style="--legend-color:${item.color};"></span>
+              <span>${escapeHtml(item.label)}</span>
+            </div>
+          `;
+        }
+        if (item.symbol === 'square') {
+          return `
+            <div class="sheet-legend-item">
+              <span class="sheet-legend-swatch square" style="--legend-color:${item.color};"></span>
+              <span>${escapeHtml(item.label)}</span>
+            </div>
+          `;
+        }
+        return `
+          <div class="sheet-legend-item">
+            <span class="sheet-legend-dot" style="background:${item.color};"></span>
+            <span>${escapeHtml(item.label)}</span>
+          </div>
+        `;
+      }).join('');
 
       const apfcLogoUrl = new URL('assets/APFC_Logo.png', window.location.href).href;
       const binghattiLogoUrl = new URL('assets/binghatti_logo.jpg', window.location.href).href;
@@ -1331,6 +1383,27 @@
       border-radius: 999px;
       flex: 0 0 8px;
       box-shadow: 0 0 0 2px rgba(22,32,44,0.04);
+    }
+    .sheet-legend-swatch {
+      width: 14px;
+      height: 14px;
+      position: relative;
+      flex: 0 0 14px;
+      display: inline-block;
+    }
+    .sheet-legend-swatch.ring::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border: 2px solid var(--legend-color);
+      border-radius: 999px;
+    }
+    .sheet-legend-swatch.square::before {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border: 2px solid var(--legend-color);
+      border-radius: 2px;
     }
     .sheet-stamp {
       color: #6d7f96;
