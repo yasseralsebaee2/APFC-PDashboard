@@ -344,6 +344,15 @@
       white-space: nowrap;
       user-select: none;
     }
+    .pile-label-content {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      width: 90px;
+      height: 0;
+      transform: translate(calc(-50% + var(--label-offset-x, 0px)), var(--label-offset-y, 0px));
+      will-change: transform;
+    }
     .pile-label-id,
     .pile-label-type {
       position: absolute;
@@ -384,6 +393,179 @@
         0 1px 0 rgba(5,14,22,0.94),
         0 0 8px rgba(18,32,44,0.85),
         0 0 18px rgba(10,24,36,0.55);
+    }
+
+    .print-btn {
+      min-height: 34px;
+      min-width: 102px;
+    }
+
+    .print-sheet-header {
+      display: none;
+    }
+
+    @page {
+      size: A4 landscape;
+      margin: 8mm;
+    }
+
+    @media print {
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: visible !important;
+        background: #ffffff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      body.print-mode #map,
+      body.print-mode .map-vignette {
+        position: fixed !important;
+        inset: 22mm 8mm 8mm 8mm !important;
+        width: auto !important;
+        height: auto !important;
+      }
+
+      body.print-mode .map-vignette {
+        background:
+          radial-gradient(circle at 50% 42%, rgba(255,255,255,0) 0%, rgba(255,255,255,0) 56%, rgba(7,10,14,0.12) 100%),
+          linear-gradient(180deg, rgba(7,10,14,0.04) 0%, rgba(7,10,14,0) 24%, rgba(7,10,14,0.08) 100%);
+      }
+
+      body.print-mode .right-controls,
+      body.print-mode .print-card,
+      body.print-mode .footer,
+      body.print-mode .side-panel,
+      body.print-mode .mapboxgl-ctrl-top-right,
+      body.print-mode .mapboxgl-ctrl-bottom-left,
+      body.print-mode .mapboxgl-ctrl-bottom-right {
+        display: none !important;
+      }
+
+      body.print-mode .print-sheet-header {
+        display: flex;
+        position: fixed;
+        left: 8mm;
+        right: 8mm;
+        top: 7mm;
+        z-index: 120;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 2mm;
+      }
+
+      body.print-mode .print-sheet-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: #111824;
+        letter-spacing: -0.03em;
+      }
+
+      body.print-mode .print-sheet-meta {
+        margin-top: 2px;
+        font-size: 10px;
+        color: #556274;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      body.print-mode .print-sheet-stamp {
+        font-size: 10px;
+        color: #5f6f82;
+        text-align: right;
+      }
+
+      body.print-mode .progress-card,
+      body.print-mode .status-legend,
+      body.print-mode .tests-legend {
+        background: rgba(255,255,255,0.90) !important;
+        color: #111824 !important;
+        border: 1px solid rgba(17,24,36,0.12) !important;
+        box-shadow: 0 10px 26px rgba(17,24,36,0.08) !important;
+        backdrop-filter: blur(10px) saturate(1.02);
+        -webkit-backdrop-filter: blur(10px) saturate(1.02);
+      }
+
+      body.print-mode .progress-card {
+        position: fixed !important;
+        top: 28mm !important;
+        left: 10mm !important;
+        width: 62mm !important;
+        z-index: 120 !important;
+      }
+
+      body.print-mode .status-legend {
+        position: fixed !important;
+        right: 10mm !important;
+        top: 28mm !important;
+        bottom: auto !important;
+        z-index: 120 !important;
+        min-width: 42mm;
+      }
+
+      body.print-mode .tests-legend {
+        position: fixed !important;
+        right: 10mm !important;
+        top: 67mm !important;
+        bottom: auto !important;
+        z-index: 120 !important;
+        min-width: 42mm;
+      }
+
+      body.print-mode .progress-card-title,
+      body.print-mode .status-legend-title,
+      body.print-mode .tests-legend-title {
+        color: #111824 !important;
+      }
+
+      body.print-mode .progress-card-subtitle,
+      body.print-mode .progress-stat-label,
+      body.print-mode .status-legend-row,
+      body.print-mode .tests-legend-row,
+      body.print-mode .progress-percent-sub {
+        color: #586678 !important;
+      }
+
+      body.print-mode .progress-stat-value,
+      body.print-mode .progress-percent {
+        color: #111824 !important;
+      }
+
+      body.print-mode .pile-label-marker {
+        width: 112px;
+        z-index: 130;
+      }
+
+      body.print-mode .pile-label-content {
+        width: 112px;
+      }
+
+      body.print-mode .pile-label-id {
+        top: -10px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.94);
+        border: 1px solid rgba(17,24,36,0.14);
+        box-shadow: 0 4px 12px rgba(17,24,36,0.08);
+        color: #111824 !important;
+        font-size: 9px;
+        font-weight: 700;
+        text-shadow: none;
+      }
+
+      body.print-mode .pile-label-type {
+        top: 7px;
+        padding: 1px 5px;
+        border-radius: 999px;
+        background: rgba(235,244,255,0.92);
+        border: 1px solid rgba(88,125,188,0.14);
+        color: #1e63c6 !important;
+        font-size: 8.5px;
+        font-weight: 700;
+        text-shadow: none;
+      }
     }
 
     @media (max-width: 640px) {
@@ -455,6 +637,13 @@
 
   <div id="map"></div>
   <div class="map-vignette" aria-hidden="true"></div>
+  <div class="print-sheet-header" id="printSheetHeader">
+    <div>
+      <div class="print-sheet-title" id="printSheetTitle">Project Progress Layout</div>
+      <div class="print-sheet-meta" id="printSheetMeta">Project Layout</div>
+    </div>
+    <div class="print-sheet-stamp" id="printSheetStamp">Generated</div>
+  </div>
 
   <div class="progress-card glass-card" id="progressCard">
     <div class="progress-card-header">
@@ -696,6 +885,9 @@
     let hoverRaf = 0;
     let lastHoverRecordKey = null;
     let isMapInteracting = false;
+    let isPrintMode = false;
+    let isPreparingPrint = false;
+    let printRestoreState = null;
     const supportsHoverInput = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
     function normalizeText(value) {
@@ -1353,6 +1545,7 @@
     }
 
     function getLabelLodSettings() {
+      if (isPrintMode) return { show: true, showType: true, maxCount: Number.MAX_SAFE_INTEGER };
       const zoom = map.getZoom();
       const touchScale = supportsHoverInput ? 1 : 0.72;
       if (zoom < 15.8) return { show: false, showType: false, maxCount: 0 };
@@ -1603,6 +1796,10 @@
     }
 
     const progressCard = document.getElementById('progressCard');
+    const printPdfBtn = document.getElementById('printPdfBtn');
+    const printSheetTitle = document.getElementById('printSheetTitle');
+    const printSheetMeta = document.getElementById('printSheetMeta');
+    const printSheetStamp = document.getElementById('printSheetStamp');
     const progressRingValue = document.getElementById('progressRingValue');
     const progressPercent = document.getElementById('progressPercent');
     const progressExecuted = document.getElementById('progressExecuted');
@@ -1661,16 +1858,20 @@
       if (!progressRingValue || !progressPercent || !progressExecuted || !progressRemaining || !progressTotal) return;
       const scopedRecords = getStrictScopedElementRecords();
       const pileCount = scopedRecords.filter(record => record.elementType === 'pile').length;
-      const kingPostCount = scopedRecords.filter(record => record.elementType === 'kingpost').length;
+      const kingPostRecordsInScope = scopedRecords.filter(record => record.elementType === 'kingpost');
+      const kingPostCount = kingPostRecordsInScope.length;
+      const hasInstalledKingPosts = kingPostRecordsInScope.some(record => !!record.installed);
       const total = scopedRecords.length;
       const executed = scopedRecords.filter(record => {
-        if (record.elementType === 'kingpost') return !!record.installed;
+        if (record.elementType === 'kingpost') {
+          return hasInstalledKingPosts ? !!record.installed : !!record.readyToInstall;
+        }
         return !!record.executed;
       }).length;
       const remaining = Math.max(0, total - executed);
       const percent = total ? (executed / total) * 100 : 0;
       const subtitle = kingPostCount && !pileCount
-        ? 'Installed elements vs total elements'
+        ? (hasInstalledKingPosts ? 'Installed elements vs total elements' : 'Pre-drilled elements vs total elements')
         : (pileCount && kingPostCount ? 'Completed elements vs total elements' : 'Executed piles vs total piles');
       const radius = 40;
       const circumference = 2 * Math.PI * radius;
@@ -1683,6 +1884,154 @@
       progressTotal.textContent = total.toLocaleString();
       const subtitleEl = document.querySelector('.progress-card-subtitle');
       if (subtitleEl) subtitleEl.textContent = subtitle;
+    }
+
+    function getCurrentViewMode() {
+      return view3DBtn.classList.contains('active') ? '3d' : '2d';
+    }
+
+    function getCurrentBaseStyleMode() {
+      return satBtn.classList.contains('active') ? 'satellite' : 'street';
+    }
+
+    function getScopePrintLabel() {
+      const scope = getActiveScope();
+      if (!scope) return 'Project Layout';
+      const plotLabel = isAllPlotsValue(scope.plot) ? 'All Plots' : `Plot ${scope.plot}`;
+      return `${scope.project} | ${plotLabel}`;
+    }
+
+    function renderPrintSheetHeader() {
+      if (!printSheetTitle || !printSheetMeta || !printSheetStamp) return;
+      const now = new Date();
+      const dateText = now.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      printSheetTitle.textContent = 'Project Progress Layout';
+      printSheetMeta.textContent = `${getScopePrintLabel()} | ${getCurrentBaseStyleMode()} base | 2D print view`;
+      printSheetStamp.textContent = `Generated ${dateText}`;
+    }
+
+    function layoutPrintLabels() {
+      if (!isPrintMode) return;
+      const placements = [];
+      const candidates = [
+        [0, -8],
+        [12, -24],
+        [-12, -24],
+        [18, -38],
+        [-18, -38],
+        [0, 10],
+        [16, 8],
+        [-16, 8]
+      ];
+      const intersects = (a, b, pad = 4) => !(
+        a.right + pad < b.left ||
+        a.left - pad > b.right ||
+        a.bottom + pad < b.top ||
+        a.top - pad > b.bottom
+      );
+
+      htmlPileLabels.forEach(marker => {
+        const el = marker?.getElement?.();
+        const content = el?.querySelector?.('.pile-label-content');
+        if (!content) return;
+        content.style.setProperty('--label-offset-x', '0px');
+        content.style.setProperty('--label-offset-y', '0px');
+      });
+
+      const items = htmlPileLabels
+        .map(marker => {
+          const el = marker?.getElement?.();
+          const content = el?.querySelector?.('.pile-label-content');
+          return content ? { marker, content } : null;
+        })
+        .filter(Boolean);
+
+      items.sort((a, b) => {
+        const aRect = a.content.getBoundingClientRect();
+        const bRect = b.content.getBoundingClientRect();
+        return aRect.top - bRect.top || aRect.left - bRect.left;
+      });
+
+      items.forEach(item => {
+        let chosenRect = null;
+        let chosen = candidates[0];
+        for (const [offsetX, offsetY] of candidates) {
+          item.content.style.setProperty('--label-offset-x', `${offsetX}px`);
+          item.content.style.setProperty('--label-offset-y', `${offsetY}px`);
+          const rect = item.content.getBoundingClientRect();
+          const collides = placements.some(existing => intersects(rect, existing));
+          if (!collides) {
+            chosenRect = rect;
+            chosen = [offsetX, offsetY];
+            break;
+          }
+        }
+        if (!chosenRect) {
+          item.content.style.setProperty('--label-offset-x', `${chosen[0]}px`);
+          item.content.style.setProperty('--label-offset-y', `${chosen[1]}px`);
+          chosenRect = item.content.getBoundingClientRect();
+        }
+        placements.push(chosenRect);
+      });
+    }
+
+    function waitForMapIdle(timeoutMs = 500) {
+      return new Promise(resolve => {
+        let finished = false;
+        const done = () => {
+          if (finished) return;
+          finished = true;
+          resolve();
+        };
+        try { map.once('idle', done); } catch (err) {}
+        window.setTimeout(done, timeoutMs);
+      });
+    }
+
+    async function enterPrintMode() {
+      if (isPrintMode || isPreparingPrint) return;
+      isPreparingPrint = true;
+      printRestoreState = {
+        viewMode: getCurrentViewMode()
+      };
+      try {
+        renderPrintSheetHeader();
+        setMapView('2d', { instant: true });
+        document.body.classList.add('print-mode');
+        isPrintMode = true;
+        addLabelLayer();
+        map.resize();
+        focusCurrentProjectForPrint();
+        await waitForMapIdle(700);
+        focusCurrentProjectForPrint();
+        await waitForMapIdle(220);
+        addLabelLayer();
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        layoutPrintLabels();
+      } finally {
+        isPreparingPrint = false;
+      }
+    }
+
+    function exitPrintMode() {
+      if (!isPrintMode) return;
+      document.body.classList.remove('print-mode');
+      isPrintMode = false;
+      addLabelLayer();
+      if (printRestoreState?.viewMode === '3d') {
+        setMapView('3d', { instant: true });
+      } else {
+        setMapView('2d', { instant: true });
+      }
+      map.resize();
+      printRestoreState = null;
     }
 
     function renderChart(metric = currentMetric) {
@@ -1812,6 +2161,27 @@
     }
     chartButtons.forEach(btn => btn.addEventListener('click', () => renderChart(btn.dataset.metric)));
     chartModeButtons.forEach(btn => btn.addEventListener('click', () => { currentChartMode = btn.dataset.mode; renderChart(currentMetric); }));
+    if (printPdfBtn) {
+      printPdfBtn.addEventListener('click', async () => {
+        try {
+          await enterPrintMode();
+          window.setTimeout(() => {
+            window.print();
+          }, 140);
+        } catch (err) {
+          console.error('Print preparation failed:', err);
+        }
+      });
+    }
+    window.addEventListener('beforeprint', () => {
+      renderPrintSheetHeader();
+      if (!isPrintMode) {
+        enterPrintMode().catch(err => console.error('beforeprint prepare failed:', err));
+      }
+    });
+    window.addEventListener('afterprint', () => {
+      exitPrintMode();
+    });
 
     function setMapView(mode, options = {}) {
       const is3D = mode === '3d';
@@ -2224,6 +2594,36 @@
 */
     function getPreferredViewMode() {
       return view3DBtn.classList.contains('active') ? '3d' : '2d';
+    }
+
+    function focusCurrentProjectForPrint() {
+      const strictScoped = getStrictScopedElementRecords();
+      const scope = getActiveScope();
+      const fallbackFocused = getFocusRecords(getFocusedElementRecords(scope));
+      const focusRecords = strictScoped.length ? strictScoped : fallbackFocused;
+      const projectBounds = getRecordBounds(focusRecords);
+      const focusedCenter = getRecordCentroid(focusRecords);
+
+      if (projectBounds) {
+        map.fitBounds(projectBounds, {
+          padding: { top: 74, right: 248, bottom: 34, left: 34 },
+          maxZoom: 18.92,
+          pitch: 0,
+          bearing: 0,
+          duration: 0,
+          essential: true
+        });
+        return;
+      }
+
+      map.easeTo({
+        center: focusedCenter,
+        zoom: 18.24,
+        pitch: 0,
+        bearing: 0,
+        duration: 0,
+        essential: true
+      });
     }
 
     function focusCurrentProject(instant = false) {
@@ -3274,6 +3674,10 @@
         const wrap = document.createElement('div');
         wrap.className = 'pile-label-marker';
         if (isSatellite) wrap.classList.add('satellite');
+        if (isPrintMode) wrap.classList.add('print-label-mode');
+
+        const content = document.createElement('div');
+        content.className = 'pile-label-content';
 
         const idEl = document.createElement('div');
         idEl.className = 'pile-label-id';
@@ -3285,8 +3689,9 @@
           ? ''
           : (record.row.pileType || '');
 
-        wrap.appendChild(idEl);
-        wrap.appendChild(typeEl);
+        content.appendChild(idEl);
+        content.appendChild(typeEl);
+        wrap.appendChild(content);
 
         const marker = new mapboxgl.Marker({
           element: wrap,
@@ -3298,6 +3703,9 @@
 
         htmlPileLabels.push(marker);
       });
+      if (isPrintMode) {
+        requestAnimationFrame(() => layoutPrintLabels());
+      }
     }
 
     async function init() {
@@ -3457,6 +3865,12 @@
           const mode = view3DBtn.classList.contains('active') ? '3d' : '2d';
           setTimeout(() => setMapView(mode, { instant: false }), 40);
         } catch (err) {}
+        return;
+      }
+      if (event.data?.type === 'MAP_PRINT_LAYOUT') {
+        enterPrintMode()
+          .then(() => window.print())
+          .catch(err => console.error('MAP_PRINT_LAYOUT failed:', err));
         return;
       }
         if (event.data?.type === 'AUTH_CONTEXT_UPDATED') {

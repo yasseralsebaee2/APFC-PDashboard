@@ -38,6 +38,7 @@
       dataSourceChip: document.getElementById('dataSourceChip'),
       overviewDateModeButtons: Array.from(document.querySelectorAll('#overviewDateModeToggle button')),
       refreshDashboardBtn: document.getElementById('refreshDashboardBtn'),
+      printMapPdfBtn: document.getElementById('printMapPdfBtn'),
       pageSubtitle: document.getElementById('pageSubtitle'),
       kpiTotal: document.getElementById('kpiTotal'),
       kpiExecuted: document.getElementById('kpiExecuted'),
@@ -577,6 +578,19 @@
       return true;
     }
 
+    function syncTopbarPageActions(page = activePage) {
+      const showDateModeToggle = page === 'overview' || page === 'production' || page === 'utilization';
+      const dateModeToggle = document.getElementById('overviewDateModeToggle');
+      if (dateModeToggle) {
+        dateModeToggle.style.display = showDateModeToggle ? 'inline-flex' : 'none';
+      }
+      if (els.printMapPdfBtn) {
+        const showPrintMapPdf = page === 'map';
+        els.printMapPdfBtn.hidden = !showPrintMapPdf;
+        els.printMapPdfBtn.style.display = showPrintMapPdf ? 'inline-flex' : 'none';
+      }
+    }
+
     function updateUserContextUi() {
       if (els.pageSubtitle) els.pageSubtitle.textContent = getScopeSubtitle();
       if (els.projectScopeBtn) els.projectScopeBtn.textContent = getScopeLabel();
@@ -616,6 +630,8 @@
       if (!canAccessPage(activePage)) {
         activePage = 'overview';
       }
+
+      syncTopbarPageActions(activePage);
     }
 
     function setAuthLocked(isLocked, errorMessage = '') {
@@ -794,6 +810,601 @@
       els.projectMapFrame.contentWindow.postMessage({
         type: 'MAP_FOCUS_ANIMATE'
       }, window.location.origin);
+    }
+
+    function getPrintTimestampLabel() {
+      return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Dubai'
+      }).format(new Date());
+    }
+
+    function getPrintLayoutScopeLabel() {
+      return isAllPlotsValue(selectedPlot) ? 'ALL PLOTS' : normalizeText(selectedPlot || 'ALL PLOTS').toUpperCase();
+    }
+
+    function getProjectedPilePoint(row) {
+      const x = Number(row?.design_x ?? row?.design_X);
+      const y = Number(row?.design_y ?? row?.design_Y);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    }
+
+    function getProjectedKingPostSegment(row) {
+      const frontX = Number(row?.design_x ?? row?.design_X);
+      const frontY = Number(row?.design_y ?? row?.design_Y);
+      const backX = Number(row?.design_back_x ?? row?.design_back_X ?? row?.design_Back_X ?? row?.design_BackX ?? row?.designBackX);
+      const backY = Number(row?.design_back_y ?? row?.design_back_Y ?? row?.design_Back_Y ?? row?.design_BackY ?? row?.designBackY);
+      const hasFront = Number.isFinite(frontX) && Number.isFinite(frontY);
+      const hasBack = Number.isFinite(backX) && Number.isFinite(backY);
+      if (!hasFront && !hasBack) return null;
+      if (hasFront && hasBack) {
+        return {
+          x1: frontX,
+          y1: frontY,
+          x2: backX,
+          y2: backY,
+          cx: (frontX + backX) / 2,
+          cy: (frontY + backY) / 2
+        };
+      }
+      const x = hasFront ? frontX : backX;
+      const y = hasFront ? frontY : backY;
+      return { x1: x, y1: y, x2: x, y2: y, cx: x, cy: y };
+    }
+
+    function parseKingPostProfileForPrint(profileText) {
+      const text = normalizeText(profileText).toUpperCase();
+      const match = text.match(/(\d+(?:\.\d+)?)\s*[X×]\s*(\d+(?:\.\d+)?)/);
+      const depthM = match ? (Number(match[1]) / 1000) : 0.42;
+      const widthM = match ? (Number(match[2]) / 1000) : 0.18;
+      return {
+        depthM: Number.isFinite(depthM) && depthM > 0 ? depthM : 0.42,
+        widthM: Number.isFinite(widthM) && widthM > 0 ? widthM : 0.18
+      };
+    }
+
+    function buildUbSectionLocalPath(widthPx, depthPx, flangePx, webPx) {
+      const halfW = widthPx / 2;
+      const halfD = depthPx / 2;
+      const halfWeb = webPx / 2;
+      const pts = [
+        [-halfW, -halfD],
+        [ halfW, -halfD],
+        [ halfW, -halfD + flangePx],
+        [ halfWeb, -halfD + flangePx],
+        [ halfWeb,  halfD - flangePx],
+        [ halfW,  halfD - flangePx],
+        [ halfW,  halfD],
+        [-halfW,  halfD],
+        [-halfW,  halfD - flangePx],
+        [-halfWeb, halfD - flangePx],
+        [-halfWeb, -halfD + flangePx],
+        [-halfW, -halfD + flangePx]
+      ];
+      return `M ${pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L ')} Z`;
+    }
+
+    function buildProjectLayoutPrintSummary(pileRows, kingRows) {
+      const pileExecutedRows = getExecutedRows(pileRows);
+      const kingInstalledRows = kingRows.filter(isKingPostInstalled);
+      const kingPredrilledRows = kingRows.filter(isKingPostPreDrilled);
+      const hasInstalledKingPosts = kingInstalledRows.length > 0;
+      const kingCompleted = hasInstalledKingPosts ? kingInstalledRows.length : kingPredrilledRows.length;
+      const total = pileRows.length + kingRows.length;
+      const completed = pileExecutedRows.length + kingCompleted;
+      const remaining = Math.max(0, total - completed);
+      const progress = total ? (completed / total) * 100 : 0;
+      let subtitle = 'Completed elements vs total elements';
+      if (pileRows.length && !kingRows.length) subtitle = 'Executed piles vs total piles';
+      else if (kingRows.length && !pileRows.length) {
+        subtitle = hasInstalledKingPosts
+          ? 'Installed kingposts vs total kingposts'
+          : 'Pre-drilled kingposts vs total kingposts';
+      }
+      return {
+        total,
+        completed,
+        remaining,
+        progress,
+        subtitle,
+        pileCount: pileRows.length,
+        kingPostCount: kingRows.length,
+        hasInstalledKingPosts
+      };
+    }
+
+    function buildProjectLayoutLegend(pileRows, kingRows, summary) {
+      if (pileRows.length && !kingRows.length) {
+        return [
+          { label: 'Executed', color: '#20cf7a' },
+          { label: 'Executed Last Day', color: '#ffb347' }
+        ];
+      }
+      if (kingRows.length && !pileRows.length) {
+        return [
+          { label: 'Pre-Drilled', color: '#ffb347' },
+          { label: 'Installed', color: '#20cf7a' }
+        ];
+      }
+      return [
+        { label: 'Complete', color: '#20cf7a' },
+        { label: 'Recent / Ready', color: '#ffb347' },
+        { label: 'Remaining', color: '#cfd6e2' }
+      ];
+    }
+
+    function buildProjectLayoutPrintRecords(pileRows, kingRows) {
+      const latestPileDateKey = getExecutedRows(pileRows)
+        .map(row => getOverviewDateKey(row))
+        .filter(Boolean)
+        .sort()
+        .pop() || '';
+      const pileRecords = pileRows.map(row => {
+        const point = getProjectedPilePoint(row);
+        if (!point) return null;
+        const executed = isExecutedRow(row);
+        const dateKey = executed ? getOverviewDateKey(row) : '';
+        const statusKey = executed
+          ? (dateKey && dateKey === latestPileDateKey ? 'recent' : 'complete')
+          : 'remaining';
+        return {
+          kind: 'pile',
+          x: point.x,
+          y: point.y,
+          anchorX: point.x,
+          anchorY: point.y,
+          id: normalizeText(row.id) || '-',
+          secondary: normalizeText(row.pileType),
+          statusKey
+        };
+      }).filter(Boolean);
+
+      const kingRecords = kingRows.map(row => {
+        const segment = getProjectedKingPostSegment(row);
+        if (!segment) return null;
+        let statusKey = 'remaining';
+        if (isKingPostInstalled(row)) statusKey = 'complete';
+        else if (isKingPostPreDrilled(row)) statusKey = 'recent';
+        return {
+          kind: 'kingpost',
+          x1: segment.x1,
+          y1: segment.y1,
+          x2: segment.x2,
+          y2: segment.y2,
+          x: segment.cx,
+          y: segment.cy,
+          anchorX: segment.cx,
+          anchorY: segment.cy,
+          id: normalizeText(row.id) || '-',
+          profile: normalizeText(row.profile),
+          secondary: '',
+          statusKey
+        };
+      }).filter(Boolean);
+
+      return [...pileRecords, ...kingRecords];
+    }
+
+    function buildConvexHull(points) {
+      const clean = (points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+      if (clean.length <= 1) return clean;
+      const sorted = clean.slice().sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      sorted.forEach(point => {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+        lower.push(point);
+      });
+      const upper = [];
+      for (let i = sorted.length - 1; i >= 0; i -= 1) {
+        const point = sorted[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+        upper.push(point);
+      }
+      lower.pop();
+      upper.pop();
+      return lower.concat(upper);
+    }
+
+    function triggerMapPrintLayout() {
+      const pileRows = getRowsForProject(selectedProject);
+      const kingRows = getKingPostRowsForProject(selectedProject);
+      const records = buildProjectLayoutPrintRecords(pileRows, kingRows);
+      if (!records.length) {
+        window.alert('No project layout data is available for the current scope.');
+        return;
+      }
+
+      const printWindow = window.open('', '_blank', 'width=1480,height=980');
+      if (!printWindow) {
+        window.alert('Unable to open the print preview window. Please allow pop-ups for this dashboard.');
+        return;
+      }
+
+      const summary = buildProjectLayoutPrintSummary(pileRows, kingRows);
+      const legend = buildProjectLayoutLegend(pileRows, kingRows, summary);
+      const allPoints = records.flatMap(record => {
+        if (record.kind === 'kingpost') {
+          return [
+            { x: record.x1, y: record.y1 },
+            { x: record.x2, y: record.y2 },
+            { x: record.anchorX, y: record.anchorY }
+          ];
+        }
+        return [{ x: record.x, y: record.y }];
+      });
+
+      const svgWidth = 1490;
+      const svgHeight = 955;
+      const plotBox = { x: 10, y: 10, width: svgWidth - 20, height: svgHeight - 20 };
+      const projectCenter = {
+        x: allPoints.reduce((sum, point) => sum + point.x, 0) / allPoints.length,
+        y: allPoints.reduce((sum, point) => sum + point.y, 0) / allPoints.length
+      };
+
+      const rotateAroundCenter = (point, angle) => {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const dx = point.x - projectCenter.x;
+        const dy = point.y - projectCenter.y;
+        return {
+          x: dx * cos - dy * sin,
+          y: dx * sin + dy * cos
+        };
+      };
+
+      const fitOptions = [0, Math.PI / 2].map(angle => {
+        const rotatedPoints = allPoints.map(point => rotateAroundCenter(point, angle));
+        const minX = Math.min(...rotatedPoints.map(point => point.x));
+        const maxX = Math.max(...rotatedPoints.map(point => point.x));
+        const minY = Math.min(...rotatedPoints.map(point => point.y));
+        const maxY = Math.max(...rotatedPoints.map(point => point.y));
+        const spanX = Math.max(1, maxX - minX);
+        const spanY = Math.max(1, maxY - minY);
+        const scale = Math.min(
+          (plotBox.width - 20) / spanX,
+          (plotBox.height - 20) / spanY
+        );
+        return { angle, minX, maxX, minY, maxY, scale };
+      });
+
+      const bestFit = fitOptions.sort((a, b) => b.scale - a.scale)[0];
+      const projectPoint = point => {
+        const rotated = rotateAroundCenter(point, bestFit.angle);
+        const originX = plotBox.x + (plotBox.width - (bestFit.maxX - bestFit.minX) * bestFit.scale) / 2;
+        const originY = plotBox.y + (plotBox.height - (bestFit.maxY - bestFit.minY) * bestFit.scale) / 2;
+        return {
+          x: originX + (rotated.x - bestFit.minX) * bestFit.scale,
+          y: originY + (bestFit.maxY - rotated.y) * bestFit.scale
+        };
+      };
+
+      const projectedForHull = allPoints.map(projectPoint);
+      const hullPoints = buildConvexHull(projectedForHull);
+      const hullPath = hullPoints.length >= 3
+        ? `M ${hullPoints.map(point => `${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' L ')} Z`
+        : '';
+
+      const statusStyles = {
+        complete: {
+          fill: 'rgba(32, 207, 122, 0.24)',
+          stroke: '#21cf7a',
+          labelStroke: 'rgba(32, 207, 122, 0.22)'
+        },
+        recent: {
+          fill: 'rgba(255, 179, 71, 0.22)',
+          stroke: '#ffb347',
+          labelStroke: 'rgba(255, 179, 71, 0.24)'
+        },
+        remaining: {
+          fill: 'rgba(203, 211, 224, 0.18)',
+          stroke: '#cfd6e2',
+          labelStroke: 'rgba(207, 214, 226, 0.24)'
+        }
+      };
+
+      const layoutRecords = records
+        .map(record => {
+          const anchor = projectPoint({ x: record.anchorX, y: record.anchorY });
+          const dxRaw = record.anchorX - projectCenter.x;
+          const dyRaw = projectCenter.y - record.anchorY;
+          const distance = Math.hypot(dxRaw, dyRaw) || 1;
+          return {
+            ...record,
+            screen: record.kind === 'kingpost'
+              ? {
+                  x1: projectPoint({ x: record.x1, y: record.y1 }).x,
+                  y1: projectPoint({ x: record.x1, y: record.y1 }).y,
+                  x2: projectPoint({ x: record.x2, y: record.y2 }).x,
+                  y2: projectPoint({ x: record.x2, y: record.y2 }).y
+                }
+              : null,
+            anchor,
+            dirX: dxRaw / distance,
+            dirY: dyRaw / distance,
+            radialDistance: distance
+          };
+        });
+
+      const shapeMarkup = layoutRecords.map(record => {
+        const style = statusStyles[record.statusKey] || statusStyles.remaining;
+        if (record.kind === 'kingpost') {
+          const beam = record.screen;
+          const profile = parseKingPostProfileForPrint(record.profile);
+          const angleDeg = (Math.atan2(beam.y2 - beam.y1, beam.x2 - beam.x1) * 180 / Math.PI) - 90;
+          const ubPrintScale = 0.62;
+          const rawWidthPx = Math.min(9.2, Math.max(4.4, profile.widthM * bestFit.scale * 1.12));
+          const rawDepthPx = Math.min(16.8, Math.max(8.4, profile.depthM * bestFit.scale * 1.12));
+          const widthPx = rawWidthPx * ubPrintScale;
+          const depthPx = rawDepthPx * ubPrintScale;
+          const flangePx = Math.min(2.5, Math.max(1.0, depthPx * 0.14)) * ubPrintScale;
+          const webPx = Math.min(1.85, Math.max(0.82, widthPx * 0.19)) * ubPrintScale;
+          const path = buildUbSectionLocalPath(widthPx, depthPx, flangePx, webPx);
+          return `<g transform="translate(${record.anchor.x.toFixed(2)} ${record.anchor.y.toFixed(2)}) rotate(${angleDeg.toFixed(3)})">
+            <path d="${path}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.9" opacity="0.96" />
+          </g>`;
+        }
+        return `<circle cx="${record.anchor.x.toFixed(2)}" cy="${record.anchor.y.toFixed(2)}" r="7.0" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1.05" />`;
+      }).join('');
+
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const labelMarkup = layoutRecords.map(record => {
+        const secondary = record.secondary;
+        const isKingPost = record.kind === 'kingpost';
+        if (isKingPost && record.screen) {
+          const dx = record.screen.x2 - record.screen.x1;
+          const dy = record.screen.y2 - record.screen.y1;
+          const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+          const labelX = clamp(record.screen.x2, plotBox.x + 6, plotBox.x + plotBox.width - 6);
+          const labelY = clamp(record.screen.y2, plotBox.y + 6, plotBox.y + plotBox.height - 6);
+          return `
+            <g transform="translate(${labelX.toFixed(2)} ${labelY.toFixed(2)}) rotate(${angleDeg.toFixed(3)})">
+              <text x="1.2" y="0" text-anchor="start" dominant-baseline="middle" font-size="7.2" font-weight="600" fill="#16202c" stroke="rgba(255,255,255,0.94)" stroke-width="0.9" paint-order="stroke">${escapeHtml(record.id)}</text>
+            </g>
+          `;
+        }
+        const textX = clamp(record.anchor.x + (record.dirX * (isKingPost ? 0.8 : 2.4)), plotBox.x + 14, plotBox.x + plotBox.width - 14);
+        const topY = clamp(record.anchor.y - (isKingPost ? 12.8 : 8.0), plotBox.y + 10, plotBox.y + plotBox.height - 14);
+        const lowerY = clamp(record.anchor.y + (isKingPost ? 22.2 : 10.2), plotBox.y + 18, plotBox.y + plotBox.height - 6);
+        const idFontSize = isKingPost ? 7.2 : 8.6;
+        const typeFontSize = isKingPost ? 6.0 : 6.7;
+        const idStroke = isKingPost ? 0.9 : 1.2;
+        const typeStroke = isKingPost ? 0.7 : 0.95;
+        return `
+          <text x="${textX.toFixed(2)}" y="${topY.toFixed(2)}" text-anchor="middle" font-size="${idFontSize}" font-weight="600" fill="#16202c" stroke="rgba(255,255,255,0.94)" stroke-width="${idStroke}" paint-order="stroke">${escapeHtml(record.id)}</text>
+          ${secondary ? `<text x="${textX.toFixed(2)}" y="${lowerY.toFixed(2)}" text-anchor="middle" font-size="${typeFontSize}" font-weight="600" fill="#4b74bf" stroke="rgba(255,255,255,0.94)" stroke-width="${typeStroke}" paint-order="stroke">${escapeHtml(secondary)}</text>` : ''}
+        `;
+      }).join('');
+
+      const svgMarkup = `
+        <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Project layout">
+          <defs>
+            <linearGradient id="layoutPanelFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#fbfdff" />
+              <stop offset="100%" stop-color="#f4f7fb" />
+            </linearGradient>
+          </defs>
+          <rect x="${plotBox.x}" y="${plotBox.y}" width="${plotBox.width}" height="${plotBox.height}" rx="20" fill="url(#layoutPanelFill)" stroke="rgba(19,28,39,0.08)" stroke-width="1.35" />
+          ${hullPath ? `<path d="${hullPath}" fill="rgba(31,111,255,0.03)" stroke="rgba(31,111,255,0.28)" stroke-width="2" stroke-dasharray="8 8" />` : ''}
+          ${shapeMarkup}
+          ${labelMarkup}
+        </svg>
+      `;
+
+      const completionLabel = summary.pileCount && !summary.kingPostCount
+        ? 'Piles'
+        : (summary.kingPostCount && !summary.pileCount ? 'KingPosts' : 'Elements');
+      const progressLine = `${summary.completed}/${summary.total} ${completionLabel} • ${formatNumberOneDecimal(summary.progress)}% Complete`;
+      const legendMarkup = legend.map(item => `
+        <div class="sheet-legend-item">
+          <span class="sheet-legend-dot" style="background:${item.color};"></span>
+          <span>${escapeHtml(item.label)}</span>
+        </div>
+      `).join('');
+
+      const apfcLogoUrl = new URL('assets/APFC_Logo.png', window.location.href).href;
+      const binghattiLogoUrl = new URL('assets/binghatti_logo.jpg', window.location.href).href;
+
+      const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Project Progress Layout</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --ink: #16202c;
+      --muted: #73839a;
+      --line: rgba(22, 32, 44, 0.10);
+      --panel: #ffffff;
+      --panel-soft: #f6f8fb;
+      --shadow: 0 18px 44px rgba(8, 14, 22, 0.10);
+      --green: #20cf7a;
+      --amber: #ffb347;
+      --grey: #cfd6e2;
+    }
+    * { box-sizing: border-box; }
+    @page { size: A4 landscape; margin: 6mm; }
+    html, body { margin: 0; padding: 0; background: #eef2f7; color: var(--ink); font-family: "Segoe UI", Arial, sans-serif; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet {
+      width: 100%;
+      margin: 0 auto;
+      height: 198mm;
+      padding: 3mm 3mm 2mm;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25mm;
+      overflow: hidden;
+    }
+    .sheet-header {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 0 1px 2px;
+      flex: 0 0 auto;
+      border-bottom: 1px solid rgba(18, 32, 51, 0.10);
+    }
+    .sheet-brandrow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      width: 100%;
+    }
+    .sheet-head-main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 1px;
+      min-width: 0;
+      flex: 1 1 auto;
+      padding: 0 18px;
+    }
+    .sheet-brandrow img {
+      display: block;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+    .sheet-brandrow .sheet-brand-apfc {
+      height: 30px;
+      width: auto;
+    }
+    .sheet-brandrow .sheet-brand-binghatti {
+      height: 40px;
+      width: auto;
+      object-position: center;
+      clip-path: inset(7px 0 7px 0);
+    }
+    .sheet-eyebrow {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #6f85a5;
+      display: none;
+    }
+    .sheet-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+      line-height: 1.08;
+      color: #122033;
+      text-wrap: balance;
+    }
+    .sheet-progressline {
+      color: #6f82a0;
+      font-size: 8.6px;
+      font-weight: 700;
+      letter-spacing: 0.025em;
+    }
+    .sheet-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 7px;
+      border: 1px solid rgba(22,32,44,0.08);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.94);
+      box-shadow: 0 6px 18px rgba(8,14,22,0.06);
+    }
+    .sheet-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 8.5px;
+      color: #42536b;
+    }
+    .sheet-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      flex: 0 0 8px;
+      box-shadow: 0 0 0 2px rgba(22,32,44,0.04);
+    }
+    .sheet-stamp {
+      color: #6d7f96;
+      font-size: 9px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .sheet-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+    }
+    .layout-card {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 0;
+    }
+    .layout-card svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      flex: 1 1 auto;
+    }
+    .sheet-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 1px 1px 0;
+      flex: 0 0 auto;
+      border-top: 1px solid rgba(18, 32, 51, 0.08);
+    }
+    @media print {
+      html, body { background: #ffffff; }
+      .sheet { padding: 0; width: auto; }
+    }
+  </style>
+</head>
+<body onload="setTimeout(function(){ window.print(); }, 280)">
+  <div class="sheet">
+    <div class="sheet-header">
+      <div class="sheet-brandrow">
+        <img class="sheet-brand-apfc" src="${apfcLogoUrl}" alt="APFC logo" />
+        <div class="sheet-head-main">
+          <h1 class="sheet-title">${escapeHtml(normalizeText(selectedProject || DEFAULT_PROJECT))} - Project Progress Layout</h1>
+          <div class="sheet-progressline">${escapeHtml(progressLine)}</div>
+        </div>
+        <img class="sheet-brand-binghatti" src="${binghattiLogoUrl}" alt="Binghatti logo" />
+      </div>
+    </div>
+
+    <div class="sheet-body">
+      <main class="layout-card">
+        ${svgMarkup}
+      </main>
+    </div>
+    <div class="sheet-footer">
+      <div class="sheet-stamp">Generated ${escapeHtml(getPrintTimestampLabel())}</div>
+      <div class="sheet-legend">${legendMarkup}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
     }
 
     function bindMapFrameSync() {
@@ -1018,6 +1629,10 @@
           elementType: normalizeText(row.elementType || row.ElementType || 'KingPost'),
           id: normalizeText(row.pileId || row.PileID),
           profile: normalizeText(row.profile || row.Profile),
+          design_x: row.design_x ?? row.design_X ?? null,
+          design_y: row.design_y ?? row.design_Y ?? null,
+          design_back_x: row.design_back_x ?? row.design_back_X ?? row.design_Back_X ?? row.design_BackX ?? row.designBackX ?? null,
+          design_back_y: row.design_back_y ?? row.design_back_Y ?? row.design_Back_Y ?? row.design_BackY ?? row.designBackY ?? null,
           operationalStatus: normalizeText(row.operationalStatus || row.OperationalStatus),
           isInstalled: row.isInstalled ?? row.IsInstalled ?? null,
           beamInstallation: shiftKingPostDateTime(row.beamInstallation || row.BeamInstallation),
@@ -2406,11 +3021,7 @@
       els.kpiRow.style.display = page === 'overview' ? 'grid' : 'none';
       document.querySelector('.content')?.classList.toggle('production-mode', page === 'production');
 
-      const showDateModeToggle = page === 'overview' || page === 'production' || page === 'utilization';
-      const dateModeToggle = document.getElementById('overviewDateModeToggle');
-      if (dateModeToggle) {
-        dateModeToggle.style.display = showDateModeToggle ? 'inline-flex' : 'none';
-      }
+      syncTopbarPageActions(page);
 
       updateUserContextUi();
 
@@ -8235,6 +8846,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         if (els.refreshDashboardBtn) {
           els.refreshDashboardBtn.addEventListener('click', refreshDashboardData);
         }
+        if (els.printMapPdfBtn) {
+          els.printMapPdfBtn.addEventListener('click', triggerMapPrintLayout);
+        }
 
         els.authForm?.addEventListener('submit', evt => {
           evt.preventDefault();
@@ -8286,10 +8900,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           broadcastAuthContext();
         }));
 
-        const dateModeToggle = document.getElementById('overviewDateModeToggle');
-        if (dateModeToggle) {
-          dateModeToggle.style.display = (activePage === 'overview' || activePage === 'production' || activePage === 'utilization') ? 'inline-flex' : 'none';
-        }
+        syncTopbarPageActions(activePage);
 
         els.granularityToggleButtons.forEach(btn => btn.addEventListener('click', () => setGranularity(btn.dataset.granularity)));
         document.getElementById('modeToggle').addEventListener('click', toggleMode);
