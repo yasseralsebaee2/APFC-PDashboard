@@ -266,6 +266,11 @@
     .visibility-value { font-size: 11px; color: rgba(255,255,255,0.62); }
     .visibility-slider { width: 100%; accent-color: var(--gold); }
 
+    /* Keep Fade panel from overlapping the orbit control */
+    .right-controls { padding-bottom: 170px; }
+    .visibility-card.compact + .orbit-joystick { bottom: 48px; }
+    .visibility-card:not(.compact) + .orbit-joystick { bottom: 8px; }
+
     .orbit-joystick {
       position: absolute;
       right: 16px;
@@ -543,6 +548,43 @@
         0 1px 0 rgba(5,14,22,0.94),
         0 0 8px rgba(18,32,44,0.85),
         0 0 18px rgba(10,24,36,0.55);
+    }
+
+    /* 3D overlay labels should sit close to the member head without "lifting" the ID in screen-space. */
+    .pile-label-marker.overlay3d {
+      width: auto;
+    }
+    .pile-label-marker.overlay3d .pile-label-content {
+      width: auto;
+      height: auto;
+      transform: translate(calc(-50% + var(--label-offset-x, 0px)), calc(-50% + var(--label-offset-y, 0px)));
+    }
+    .pile-label-marker.overlay3d .pile-label-id,
+    .pile-label-marker.overlay3d .pile-label-type {
+      position: static;
+      left: auto;
+      top: auto;
+      transform: none;
+      display: block;
+      line-height: 1.05;
+    }
+    .pile-label-marker.overlay3d .pile-label-id {
+      font-size: 10px;
+      font-weight: 500;
+      margin-bottom: 2px;
+      color: rgba(244, 250, 255, 0.92);
+      text-shadow:
+        0 1px 0 rgba(0,0,0,0.55),
+        0 0 10px rgba(0,0,0,0.35);
+    }
+    .pile-label-marker.overlay3d .pile-label-type {
+      font-size: 10px;
+      font-weight: 500;
+      opacity: 0.92;
+      color: rgba(188, 222, 255, 0.95);
+      text-shadow:
+        0 1px 0 rgba(0,0,0,0.55),
+        0 0 10px rgba(0,0,0,0.35);
     }
 
     .print-btn {
@@ -847,11 +889,13 @@
 
     <div class="visibility-card glass-card">
     <div class="visibility-header" style="padding:6px; display:flex; justify-content:center;">
-      <button id="visibilityToggleBtn" type="button" class="view-btn" title="Pile opacity">Fade</button>
+      <button id="visibilityToggleBtn" type="button" class="view-btn" title="Element opacity">Fade</button>
     </div>
     <div class="visibility-body">
-      <div class="visibility-row"><span class="visibility-label">Pile opacity</span><span class="visibility-value" id="allOpacityValue">0.70</span></div>
-      <input class="visibility-slider" id="allOpacitySlider" type="range" min="0.15" max="1.00" step="0.01" value="0.70">
+      <div class="visibility-row"><span class="visibility-label">Element opacity</span><span class="visibility-value" id="allOpacityValue">1.00</span></div>
+      <input class="visibility-slider" id="allOpacitySlider" type="range" min="0.15" max="1.00" step="0.01" value="1.00">
+      <div class="visibility-row" style="margin-top:6px;"><span class="visibility-label">Map opacity</span><span class="visibility-value" id="baseMapOpacityValue">0.50</span></div>
+      <input class="visibility-slider" id="baseMapOpacitySlider" type="range" min="0.30" max="1.00" step="0.01" value="0.50">
     </div>
   </div>
   </div>
@@ -1024,14 +1068,18 @@
         executedEmissive: 0x06b86a,
         yesterday: 0xffb02e,
         yesterdayEmissive: 0xff7a18,
-        remaining: 0xf0f6fb,
-        remainingEmissive: 0x9fb6c6,
+        // Remaining piles: in Street we use the old kingpost neutral grey; in Satellite we keep it lighter.
+        remainingStreet: 0x8c98a8,
+        remainingStreetEmissive: 0x5f6c7f,
+        remainingSatellite: 0xcfd8e4,
+        remainingSatelliteEmissive: 0x8aa1b5,
         kingpostInstalled: 0x12de68,
         kingpostInstalledEmissive: 0x08b857,
         kingpostReady: 0xff5a00,
         kingpostReadyEmissive: 0xff7a00,
-        kingpostPending: 0x8c98a8,
-        kingpostPendingEmissive: 0x5f6c7f,
+        // Remaining kingposts: distinct from remaining piles (use a premium violet accent).
+        kingpostPending: 0x6a4cff,
+        kingpostPendingEmissive: 0x3f2aa6,
         selected: 0xffffff
       },
       camera: {
@@ -1045,7 +1093,8 @@
       }
     };
 
-    let allBaseOpacity = 0.70;
+    let allBaseOpacity = 1.00;
+    let baseMapOpacity = 0.50;
     let isVisibilityCollapsed = true;
     let isChartCollapsed = true;
     let currentMetric = 'pileCount';
@@ -1562,6 +1611,14 @@
       });
     }
 
+    function syncTestRingLayerVisibility() {
+      const layerId = 'pile-test-rings-line';
+      if (!map || !map.getLayer || !map.getLayer(layerId)) return;
+      const is3D = getCurrentViewMode() === '3d';
+      // Avoid "double" test symbols in 3D: keep the true 3D indicators only.
+      try { map.setLayoutProperty(layerId, 'visibility', is3D ? 'none' : 'visible'); } catch (e) {}
+    }
+
     function getExecutionDateKey(row) {
       const concreteEndRaw = row?.asbuilt_concreteEnd || row?.asbuilt_concreteend || row?.asbuilt_ConcreteEnd;
       const concreteEnd = concreteEndRaw ? new Date(concreteEndRaw) : null;
@@ -1604,9 +1661,10 @@
     }
     function getBaseOpacityForRecord(record) {
       if (record?.elementType === 'kingpost') {
-        if (record?.stateKey === 'ready') return 0.94;
-        if (record?.stateKey === 'installed') return 0.9;
-        return 0.68;
+        const base = record?.stateKey === 'ready'
+          ? 0.94
+          : (record?.stateKey === 'installed' ? 0.9 : 0.68);
+        return Math.max(0.05, Math.min(1, base * allBaseOpacity));
       }
       if (record?.executedYesterday) return Math.min(0.98, allBaseOpacity + 0.34);
       if (record?.executed) return Math.min(0.96, allBaseOpacity + 0.24);
@@ -1616,12 +1674,39 @@
       return Math.max(0.05, getBaseOpacityForRecord(record));
     }
 
+    function getPileTopZFromLevels(row) {
+      const platform = parseNumber(
+        row?.design_platformlevel ??
+        row?.design_platformLevel ??
+        row?.design_platform_level ??
+        row?.design_platform
+      );
+      const cutoff = parseNumber(
+        row?.design_cutofflevel ??
+        row?.design_cutoffLevel ??
+        row?.design_cutoff_level ??
+        row?.design_cutoff
+      );
+      if (!Number.isFinite(platform) || !Number.isFinite(cutoff)) return -0.02;
+      // Start pile from cutoff level (relative to platform). Keep a tiny offset to avoid z-fighting.
+      return -(platform - cutoff) - 0.02;
+    }
+
+    function getKingPostTopZFromLevels(row) {
+      const platform = parseNumber(row?.design_levelplatform ?? row?.design_LevelPlatform ?? row?.design_levelPlatform);
+      const topOfShoring = parseNumber(row?.design_leveltopofshoring ?? row?.design_LevelTopOfShoring ?? row?.design_levelTopOfShoring);
+      if (!Number.isFinite(platform) || !Number.isFinite(topOfShoring)) return -0.02;
+      // Start kingpost from top-of-shoring (relative to platform). Keep a tiny offset to avoid z-fighting.
+      return -(platform - topOfShoring) - 0.02;
+    }
+
     function buildPileRecords(rows) {
       const latestExecutionKey = getLatestExecutionDateKey(rows);
       return rows.map((row, index) => {
         const lngLat = dltmToWgs84(row.design_x, row.design_y);
         if (!lngLat) return null;
         const id = normalizeId(row.id);
+        const topZ = getPileTopZFromLevels(row);
         return {
           row,
           id,
@@ -1630,6 +1715,7 @@
           lngLat,
           radiusM: getPileRadiusMeters(row),
           heightM: getVisiblePileHeight(row),
+          topZ,
           color: getPileColor(row, latestExecutionKey),
           executed: isExecutedRow(row),
           executedYesterday: isYesterdayExecutedRow(row, latestExecutionKey)
@@ -1658,6 +1744,7 @@
         const heightM = Math.max(parseNumber(row.design_depthdrilling), 0.5);
         const stateKey = getKingPostStateKey(row);
         const id = normalizeId(row.pileId);
+        const topZ = getKingPostTopZFromLevels(row);
         return {
           row,
           id,
@@ -1668,6 +1755,7 @@
           backLngLat,
           radiusM: Math.max(profile.depthM, profile.widthM) * 0.55,
           heightM,
+          topZ,
           profile,
           color: getKingPostColor(row),
           executed: stateKey === 'installed',
@@ -1999,6 +2087,8 @@
     const visibilityBody = document.querySelector('.visibility-body');
     const allOpacitySlider = document.getElementById('allOpacitySlider');
     const allOpacityValue = document.getElementById('allOpacityValue');
+    const baseMapOpacitySlider = document.getElementById('baseMapOpacitySlider');
+    const baseMapOpacityValue = document.getElementById('baseMapOpacityValue');
     const planViewBtn = document.getElementById('planViewBtn');
     const view3DBtn = document.getElementById('view3DBtn');
     const streetBtn = document.getElementById('streetBtn');
@@ -2029,7 +2119,7 @@
       if (visibilityCard) visibilityCard.classList.toggle('compact', isVisibilityCollapsed);
       visibilityToggleBtn.textContent = 'Fade';
       visibilityToggleBtn.classList.toggle('active', !isVisibilityCollapsed);
-      visibilityToggleBtn.title = isVisibilityCollapsed ? 'Show pile opacity' : 'Hide pile opacity';
+      visibilityToggleBtn.title = isVisibilityCollapsed ? 'Show element opacity' : 'Hide element opacity';
     }
     if (visibilityToggleBtn) {
       visibilityToggleBtn.addEventListener('click', () => { isVisibilityCollapsed = !isVisibilityCollapsed; applyVisibilityCollapsedState(); });
@@ -2478,6 +2568,7 @@
     function setMapView(mode, options = {}) {
       const is3D = mode === '3d';
       applyJoystickViewModeUi(is3D);
+      syncTestRingLayerVisibility();
       const scope = getActiveScope();
       const focusedRecords = getFocusedElementRecords(scope);
       const focusRecords = getFocusRecords(focusedRecords);
@@ -2833,6 +2924,7 @@
       addLabelLayer();
       renderProgressCard();
       addTestRings();
+      syncTestRingLayerVisibility();
       keepCustomLayersOnTop();
     }
 
@@ -2934,6 +3026,8 @@
           else keepCustomLayersOnTop();
         });
       });
+      applyBaseMapOpacity();
+      syncBaseMapOpacityUi();
     }
 
     streetBtn.addEventListener('click', () => {
@@ -2943,6 +3037,7 @@
       }
       isSatellite = false;
       syncSatelliteButtonUi();
+      syncBaseMapOpacityUi();
       map.setStyle(BASE_STYLE_URL);
     });
 
@@ -2953,6 +3048,7 @@
       }
       isSatellite = true;
       syncSatelliteButtonUi();
+      syncBaseMapOpacityUi();
       map.setStyle(getSatelliteStyleObject());
     });
 
@@ -3054,13 +3150,15 @@
       const stateKey = getPileStateKey(record);
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterday;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executed;
-      return MAP_PREMIUM.colors.remaining;
+      // Remaining piles: use a darker neutral in Street to distinguish from kingposts,
+      // but keep it lighter in Satellite so it doesn't read too heavy on imagery.
+      return isSatellite ? MAP_PREMIUM.colors.remainingSatellite : MAP_PREMIUM.colors.remainingStreet;
     }
     function getPileBaseEmissive(record) {
       const stateKey = getPileStateKey(record);
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterdayEmissive;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executedEmissive;
-      return MAP_PREMIUM.colors.remainingEmissive;
+      return isSatellite ? MAP_PREMIUM.colors.remainingSatelliteEmissive : MAP_PREMIUM.colors.remainingStreetEmissive;
     }
     function getPileEmissiveIntensity(record) {
       const stateKey = getPileStateKey(record);
@@ -3095,12 +3193,12 @@
     }
     function createPileDisplayMesh(record, localX, localY, visualMode = 'normal', isThreeDimensional = false) {
       const visual = getPileInteractiveVisual(record, visualMode);
-      const effectiveOpacity = isThreeDimensional ? 1 : visual.opacity;
+      const effectiveOpacity = Math.max(0.05, Math.min(1, Number(visual.opacity) || 1));
       const geometry = new THREE.CylinderGeometry(record.radiusM, record.radiusM, record.heightM, PILE_SEGMENTS, 1, false);
       geometry.rotateX(Math.PI / 2);
       const material = new THREE.MeshPhongMaterial({
         color: visual.color,
-        transparent: !isThreeDimensional && effectiveOpacity < 0.999,
+        transparent: effectiveOpacity < 0.999,
         opacity: effectiveOpacity,
         shininess: 145,
         specular: 0xcfd7df,
@@ -3118,7 +3216,8 @@
       mesh.userData.record = record;
       mesh.userData.originalHeight = record.heightM;
       mesh.userData.anchorMode = 'center';
-      mesh.position.set(localX, localY, -(record.heightM / 2 + 0.02));
+      const topZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
+      mesh.position.set(localX, localY, topZ - (record.heightM / 2));
       mesh.frustumCulled = false;
       mesh.renderOrder = visualMode === 'normal' ? 999 : 1001;
       return mesh;
@@ -3129,6 +3228,24 @@
       pileLayer.refreshAppearance();
     }
 
+    function applyBaseMapOpacity() {
+      if (!map) return;
+      const v = Math.max(0.3, Math.min(1, Number(baseMapOpacity) || 1));
+
+      // Satellite-only for reliability; Street style uses many expression opacities.
+      if (!isSatellite) return;
+      try { map.setPaintProperty('external-satellite-raster', 'raster-opacity', v); } catch (e) {}
+    }
+
+    function syncBaseMapOpacityUi() {
+      if (!baseMapOpacitySlider || !baseMapOpacityValue) return;
+      baseMapOpacityValue.textContent = baseMapOpacity.toFixed(2);
+      const enabled = !!isSatellite;
+      baseMapOpacitySlider.disabled = !enabled;
+      baseMapOpacitySlider.style.opacity = enabled ? '1' : '0.45';
+      baseMapOpacitySlider.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+
     function bindVisibilityControls() {
       allOpacityValue.textContent = allBaseOpacity.toFixed(2);
       allOpacitySlider.addEventListener('input', () => {
@@ -3136,6 +3253,15 @@
         allOpacityValue.textContent = allBaseOpacity.toFixed(2);
         refreshPileAppearance();
       });
+
+      if (baseMapOpacitySlider) {
+        syncBaseMapOpacityUi();
+        baseMapOpacitySlider.addEventListener('input', () => {
+          baseMapOpacity = Number(baseMapOpacitySlider.value);
+          syncBaseMapOpacityUi();
+          applyBaseMapOpacity();
+        });
+      }
     }
 
     const map = new mapboxgl.Map({
@@ -3164,7 +3290,8 @@
       const testType = getTestType(record.row);
       if (!testType) return null;
       const size = record.radiusM * 1.16;
-      const zOffset = 0.10;
+      const topZ = Number.isFinite(Number(record?._local3d?.topZ)) ? Number(record._local3d.topZ) : -0.02;
+      const zOffset = topZ + 0.05;
       if (testType === 'sonic') {
         const geometry = new THREE.RingGeometry(size * 0.90, size * 1.02, 56);
         const material = new THREE.MeshBasicMaterial({
@@ -3282,8 +3409,8 @@
       mesh.material.color.setHex(visual.color);
       mesh.material.emissive = new THREE.Color(visual.emissive);
       mesh.material.emissiveIntensity = visual.emissiveIntensity;
-      mesh.material.transparent = !isThreeDimensional && visual.opacity < 0.999;
-      mesh.material.opacity = isThreeDimensional ? 1 : visual.opacity;
+      mesh.material.transparent = visual.opacity < 0.999;
+      mesh.material.opacity = Math.max(0.05, Math.min(1, Number(visual.opacity) || 1));
       mesh.material.depthTest = true;
       mesh.material.depthWrite = true;
       mesh.material.needsUpdate = true;
@@ -3308,8 +3435,8 @@
       geometry.translate(0, 0, -height);
       const material = new THREE.MeshPhongMaterial({
         color: record.color,
-        transparent: !isThreeDimensional && getNormalOpacity(record) < 0.999,
-        opacity: isThreeDimensional ? 1 : getNormalOpacity(record),
+        transparent: getNormalOpacity(record) < 0.999,
+        opacity: Math.max(0.05, Math.min(1, Number(getNormalOpacity(record)) || 1)),
         shininess: 155,
         specular: 0xffffff,
         flatShading: false,
@@ -3452,7 +3579,8 @@
           const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
           const radius = record.radiusM;
           const height = record.heightM;
-          record._local3d = { x: localX, y: localY, zCenter: -(height / 2 + 0.02), height, effectiveHeight: height, radius, topZ: -0.02 };
+          const topZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
+          record._local3d = { x: localX, y: localY, zCenter: topZ - (height / 2), height, effectiveHeight: height, radius, topZ };
           pileStateBuckets[getPileStateKey(record)].push(record);
 
           const indicator = build3DTestIndicator(record);
@@ -3473,8 +3601,8 @@
           const visual = getPileInteractiveVisual(sampleRecord, 'normal');
           const material = new THREE.MeshPhongMaterial({
             color: visual.color,
-            transparent: !this.isThreeDimensional && visual.opacity < 0.999,
-            opacity: this.isThreeDimensional ? 1 : visual.opacity,
+            transparent: visual.opacity < 0.999,
+            opacity: Math.max(0.05, Math.min(1, Number(visual.opacity) || 1)),
             shininess: 145,
             specular: 0xcfd7df,
             flatShading: false,
@@ -3508,14 +3636,15 @@
           const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
           const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
           const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
+          const topZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
           record._local3d = {
             x: localX,
             y: localY,
-            zCenter: -0.02,
+            zCenter: topZ,
             height: record.heightM,
             effectiveHeight: record.heightM,
             radius: record.radiusM,
-            topZ: -0.02
+            topZ
           };
           const bucketKey = `${getKingPostProfileKey(record.profile)}|${record.stateKey}`;
           if (!kingPostBuckets.has(bucketKey)) {
@@ -3534,8 +3663,8 @@
           const geometry = getKingPostUnitGeometry(bucket.profile);
           const material = new THREE.MeshPhongMaterial({
             color: visual.color,
-            transparent: !this.isThreeDimensional && visual.opacity < 0.999,
-            opacity: this.isThreeDimensional ? 1 : visual.opacity,
+            transparent: visual.opacity < 0.999,
+            opacity: Math.max(0.05, Math.min(1, Number(visual.opacity) || 1)),
             shininess: 150,
             specular: 0xffffff,
             flatShading: false,
@@ -3640,8 +3769,8 @@
           mesh.material.color.setHex(visual.color);
           mesh.material.emissive = new THREE.Color(visual.emissive);
           mesh.material.emissiveIntensity = visual.emissiveIntensity;
-          mesh.material.transparent = !this.isThreeDimensional && visual.opacity < 0.999;
-          mesh.material.opacity = this.isThreeDimensional ? 1 : visual.opacity;
+          mesh.material.transparent = visual.opacity < 0.999;
+          mesh.material.opacity = Math.max(0.05, Math.min(1, Number(visual.opacity) || 1));
           mesh.material.needsUpdate = true;
         });
         this.kingPostInstanceMeshes.forEach(mesh => {
@@ -3652,8 +3781,8 @@
           mesh.material.color.setHex(visual.color);
           mesh.material.emissive = new THREE.Color(visual.emissive);
           mesh.material.emissiveIntensity = visual.emissiveIntensity;
-          mesh.material.transparent = !this.isThreeDimensional && visual.opacity < 0.999;
-          mesh.material.opacity = this.isThreeDimensional ? 1 : visual.opacity;
+          mesh.material.transparent = visual.opacity < 0.999;
+          mesh.material.opacity = Math.max(0.05, Math.min(1, Number(visual.opacity) || 1));
           mesh.material.needsUpdate = true;
         });
         this.syncPileOverlayMeshes();
@@ -3952,21 +4081,52 @@
     }
 
     let htmlPileLabels = [];
+    let overlay3dLabels = [];
+    let overlay3dLabelRenderBound = false;
 
     function clearHtmlLabels() {
       htmlPileLabels.forEach(m => m.remove());
       htmlPileLabels = [];
     }
 
+    function clear3dOverlayLabels() {
+      overlay3dLabels.forEach(item => item?.el?.remove?.());
+      overlay3dLabels = [];
+      // Keep render handler bound (cheap no-op when list is empty); avoids repeated bind/unbind churn.
+    }
+
+    function update3dOverlayLabelPositions() {
+      if (!overlay3dLabels.length || !pileLayer) return;
+      const zBump = 0.0;
+      overlay3dLabels.forEach(item => {
+        const record = item.record;
+        if (!record?._local3d) return;
+        const topZ = Number.isFinite(Number(record._local3d.topZ)) ? Number(record._local3d.topZ) : -0.02;
+        const pt = pileLayer.projectLocalPointToScreen(new THREE.Vector3(record._local3d.x, record._local3d.y, topZ + zBump));
+        if (!pt || !Number.isFinite(pt.x) || !Number.isFinite(pt.y)) return;
+        item.el.style.transform = `translate3d(${pt.x.toFixed(1)}px, ${pt.y.toFixed(1)}px, 0)`;
+      });
+    }
+
     function addLabelLayer() {
       clearHtmlLabels();
+      clear3dOverlayLabels();
       if (isMapInteracting) return;
       const { records, showType } = getLabelRecordsForCurrentView();
+      const use3dOverlay = getCurrentViewMode() === '3d' && !!pileLayer;
+
+      // Ensure overlay labels stay glued to the 3D geometry while the map is rendering (zoom/rotate/pitch/joystick).
+      if (!overlay3dLabelRenderBound) {
+        overlay3dLabelRenderBound = true;
+        map.on('render', update3dOverlayLabelPositions);
+      }
+
       records.forEach(record => {
         const wrap = document.createElement('div');
         wrap.className = 'pile-label-marker';
         if (isSatellite) wrap.classList.add('satellite');
         if (isPrintMode) wrap.classList.add('print-label-mode');
+        if (use3dOverlay) wrap.classList.add('overlay3d');
 
         const content = document.createElement('div');
         content.className = 'pile-label-content';
@@ -3985,16 +4145,27 @@
         content.appendChild(typeEl);
         wrap.appendChild(content);
 
-        const marker = new mapboxgl.Marker({
-          element: wrap,
-          anchor: 'center',
-          offset: [0, 0]
-        })
-        .setLngLat(record.lngLat)
-        .addTo(map);
-
-        htmlPileLabels.push(marker);
+        if (use3dOverlay) {
+          // In 3D, follow the actual element topZ so labels sit on the member head.
+          wrap.style.position = 'absolute';
+          wrap.style.left = '0';
+          wrap.style.top = '0';
+          wrap.style.pointerEvents = 'none';
+          wrap.style.transform = 'translate3d(-9999px, -9999px, 0)';
+          map.getCanvasContainer().appendChild(wrap);
+          overlay3dLabels.push({ el: wrap, record });
+        } else {
+          const marker = new mapboxgl.Marker({
+            element: wrap,
+            anchor: 'center',
+            offset: [0, 0]
+          })
+          .setLngLat(record.lngLat)
+          .addTo(map);
+          htmlPileLabels.push(marker);
+        }
       });
+      if (use3dOverlay) update3dOverlayLabelPositions();
       if (isPrintMode) {
         requestAnimationFrame(() => layoutPrintLabels());
       }
@@ -4103,11 +4274,29 @@
       isMapInteracting = true;
       if (pileLayer) pileLayer.setHoverPile(null);
       map.getCanvas().style.cursor = '';
+
+      // If the user initiates a right-click rotate while in 2D, auto-enter 3D (no refit) so the
+      // experience feels continuous and 3D-only layers (like test indicators) behave correctly.
+      if (getCurrentViewMode() !== '3d') {
+        applyJoystickViewModeUi(true);
+        syncTestRingLayerVisibility();
+        // Preserve center/zoom/bearing; just add pitch so rotation feels like "entering 3D".
+        map.easeTo({
+          pitch: MAP_PREMIUM.camera.pitch3d,
+          duration: MAP_PREMIUM.camera.quickDuration,
+          easing: MAP_PREMIUM.camera.easing,
+          essential: true
+        });
+      }
     });
     map.on('pitchstart', () => {
       isMapInteracting = true;
       if (pileLayer) pileLayer.setHoverPile(null);
       map.getCanvas().style.cursor = '';
+      if (getCurrentViewMode() !== '3d') {
+        applyJoystickViewModeUi(true);
+        syncTestRingLayerVisibility();
+      }
     });
     map.on('moveend', () => {
       isMapInteracting = false;
