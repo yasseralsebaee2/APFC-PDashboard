@@ -12,7 +12,8 @@
   <script>
     window.APP_BUILD_VERSION = '20260406-1810';
     window.APFC_ALLOWED_PARENT_ORIGINS = [
-      'https://apfc.powerappsportals.com'
+      'https://apfc.powerappsportals.com',
+      'https://apfc-management.powerappsportals.com'
     ];
   </script>
   <link rel="stylesheet" href="css/style.css?v=20260406-1810" />
@@ -87,9 +88,24 @@
     <aside class="sidebar">
       <div class="brand brand-apfc"><img src="assets/APFC_Logo.png" alt="APFC logo" /></div>
       <div class="nav-group">
-        <button class="nav-btn active" data-icon="quality" data-page="executive"><span class="nav-icon"></span><span class="nav-label">Executive</span></button>
-        <button class="nav-btn" data-icon="companyanalytics" data-page="resources"><span class="nav-icon"></span><span class="nav-label">Resources</span></button>
-        <button class="nav-btn" data-icon="overview" data-page="map"><span class="nav-icon"></span><span class="nav-label">Map</span></button>
+        <div class="nav-stack nav-stack-active" data-nav-stack="executive">
+          <button class="nav-btn active" data-icon="quality" data-page="executive"><span class="nav-icon"></span><span class="nav-label">Executive</span></button>
+          <div class="nav-subgroup" id="navSubExecutive" aria-label="Executive layouts">
+            <button class="nav-subbtn active" data-page="executive" data-executive-layout-nav="matrix" type="button">Matrix</button>
+            <button class="nav-subbtn" data-page="executive" data-executive-layout-nav="timeline" type="button">Timeline</button>
+            <button class="nav-subbtn" data-page="executive" data-executive-layout-nav="trend" type="button">Trend</button>
+          </div>
+        </div>
+        <div class="nav-stack" data-nav-stack="resources">
+          <button class="nav-btn" data-icon="companyanalytics" data-page="resources"><span class="nav-icon"></span><span class="nav-label">Resources</span></button>
+          <div class="nav-subgroup" id="navSubResources" aria-label="Resources layouts">
+            <button class="nav-subbtn active" data-page="resources" data-company-layout-nav="heatmap" type="button">Heat Map</button>
+            <button class="nav-subbtn" data-page="resources" data-company-layout-nav="equipment" type="button">Equipment</button>
+          </div>
+        </div>
+        <div class="nav-stack" data-nav-stack="map">
+          <button class="nav-btn" data-icon="overview" data-page="map"><span class="nav-icon"></span><span class="nav-label">Map</span></button>
+        </div>
       </div>
     </aside>
 
@@ -104,6 +120,7 @@
       </div>
       <div class="top-actions">
         <div class="chip" id="dataSourceChip">Live Data Source</div>
+        <button class="action-btn action-btn-printpdf" id="printMapPdfBtn" type="button" hidden>Print PDF</button>
         <div class="mode-toggle" id="overviewDateModeToggle">
           <button class="active" data-mode="shift" type="button">Shift 7-6:59</button>
           <button data-mode="calendar" type="button">Calendar</button>
@@ -272,6 +289,16 @@
                     <div class="executive-card-head">
                       <div>
                         <div class="executive-card-title">Projects Matrix</div>
+                        <div class="executive-matrix-legend" aria-label="Activity legend">
+                          <span class="executive-matrix-legend-item">
+                            <span class="executive-matrix-legend-swatch executive-matrix-legend-swatch--piles"></span>
+                            <span>Bored Piles</span>
+                          </span>
+                          <span class="executive-matrix-legend-item">
+                            <span class="executive-matrix-legend-swatch executive-matrix-legend-swatch--king"></span>
+                            <span>KingPosts</span>
+                          </span>
+                        </div>
                       </div>
                       <div class="panel-tag" id="executiveMatrixTag">Portfolio</div>
                     </div>

@@ -383,61 +383,98 @@
         </section>
 
         <section class="page-view" id="pageUtilization">
-          <div class="utilization-layout">
-            <div class="utilization-report-panel">
-              <div class="panel-header">
+          <div class="utilization-page-shell">
+            <div class="panel utilization-page-header">
+              <div class="panel-header utilization-page-header-bar">
                 <div>
-                  <div class="panel-title">Daily Rig Utilization Matrix</div>
-                  <div class="panel-subtitle">Drilling utilization by rig based on a 12 hr shift</div>
+                  <div class="panel-title">Utilization</div>
                 </div>
-                <div class="panel-tag">12 Hr</div>
-              </div>
-              <div class="utilization-table-wrap">
-                <table class="utilization-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Rig</th>
-                      <th class="num">Drilling Hr</th>
-                      <th class="num">Drilled Lm</th>
-                      <th class="num">Shift Hr</th>
-                      <th class="num">Rig Util.</th>
-                      <th class="num">Day Total</th>
-                    </tr>
-                  </thead>
-                  <tbody id="utilizationTableBody"></tbody>
-                </table>
+                <div class="mode-toggle utilization-view-toggle" id="utilizationViewToggle">
+                  <button class="active" data-util-view="matrix" type="button">Matrix</button>
+                  <button data-util-view="timeline" type="button">Drilling Timeline</button>
+                </div>
               </div>
             </div>
 
-            <div class="utilization-chart-panel">
-              <div class="panel-header">
-                <div>
-                  <div class="panel-title">Rig Utilization</div>
-                  <div class="panel-subtitle">Daily and cumulative utilization by rig</div>
-                </div>
-                <div class="panel-tag" id="utilizationChartTag">Daily</div>
-              </div>
-              <div class="utilization-toolbar">
-                <div class="utilization-toolbar-controls">
-                  <button class="mini-toggle active" data-util-mode="daily" type="button">Daily</button>
-                  <button class="mini-toggle" data-util-mode="cumulative" type="button">Cumulative</button>
-                </div>
-                <div class="utilization-legend utilization-legend-toolbar" id="utilizationLegend"></div>
-              </div>
-              <div class="utilization-chart-stack">
-                <div class="utilization-axis-overlay" id="utilizationAxisOverlay" aria-hidden="true">
-                  <div class="utilization-axis-block utilization-axis-block-top">
-                    <div class="utilization-axis-title">Utilization %</div>
-                    <div class="utilization-axis-ticks" id="utilizationUtilTicks"></div>
+            <div class="utilization-view active" id="utilizationMatrixView">
+              <div class="utilization-layout">
+                <div class="utilization-report-panel">
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">Daily Rig Utilization Matrix</div>
+                      <div class="panel-subtitle">Drilling utilization by rig based on a 12 hr shift</div>
+                    </div>
+                    <div class="panel-tag">12 Hr</div>
                   </div>
-                  <div class="utilization-axis-block utilization-axis-block-bottom">
-                    <div class="utilization-axis-title">Drilled Lm</div>
-                    <div class="utilization-axis-ticks" id="utilizationLmTicks"></div>
+                  <div class="utilization-table-wrap">
+                    <table class="utilization-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Rig</th>
+                          <th class="num">Drilling Hr</th>
+                          <th class="num">Drilled Lm</th>
+                          <th class="num">Shift Hr</th>
+                          <th class="num">Rig Util.</th>
+                          <th class="num">Day Total</th>
+                        </tr>
+                      </thead>
+                      <tbody id="utilizationTableBody"></tbody>
+                    </table>
                   </div>
                 </div>
-                <div class="utilization-chart-wrap" id="utilizationChartWrap">
-                  <svg class="utilization-chart-svg" id="utilizationSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+
+                <div class="utilization-chart-panel">
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">Rig Utilization</div>
+                      <div class="panel-subtitle">Daily and cumulative utilization by rig</div>
+                    </div>
+                    <div class="panel-tag" id="utilizationChartTag">Daily</div>
+                  </div>
+                  <div class="utilization-toolbar">
+                    <div class="utilization-toolbar-controls">
+                      <button class="mini-toggle active" data-util-mode="daily" type="button">Daily</button>
+                      <button class="mini-toggle" data-util-mode="cumulative" type="button">Cumulative</button>
+                    </div>
+                    <div class="utilization-legend utilization-legend-toolbar" id="utilizationLegend"></div>
+                  </div>
+                  <div class="utilization-chart-stack">
+                    <div class="utilization-axis-overlay" id="utilizationAxisOverlay" aria-hidden="true">
+                      <div class="utilization-axis-block utilization-axis-block-top">
+                        <div class="utilization-axis-title">Utilization %</div>
+                        <div class="utilization-axis-ticks" id="utilizationUtilTicks"></div>
+                      </div>
+                      <div class="utilization-axis-block utilization-axis-block-bottom">
+                        <div class="utilization-axis-title">Drilled Lm</div>
+                        <div class="utilization-axis-ticks" id="utilizationLmTicks"></div>
+                      </div>
+                    </div>
+                    <div class="utilization-chart-wrap" id="utilizationChartWrap">
+                      <svg class="utilization-chart-svg" id="utilizationSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="utilization-view" id="utilizationTimelineView" hidden>
+              <div class="utilization-timeline-panel">
+                <div class="panel-header">
+                  <div>
+                    <div class="panel-title">Machine Drilling Timeline</div>
+                  </div>
+                  <div class="utilization-timeline-head-actions">
+                    <div class="utilization-timeline-legend" id="utilizationTimelineLegend"></div>
+                    <div class="panel-tag" id="utilizationTimelineTag">Live</div>
+                  </div>
+                </div>
+                <div class="utilization-timeline-wrap" id="utilizationTimelineWrap">
+                  <svg class="utilization-timeline-svg" id="utilizationTimelineSvg" viewBox="0 0 1200 520" preserveAspectRatio="xMidYMid meet"></svg>
+                  <div class="chart-tooltip utilization-timeline-tooltip" id="utilizationTimelineTooltip"></div>
+                </div>
+                <div class="utilization-timeline-footnote" id="utilizationTimelineFootnote">
+                  Timeline bars reflect the reported `from` and `to` timestamps of each rig activity window.
                 </div>
               </div>
             </div>

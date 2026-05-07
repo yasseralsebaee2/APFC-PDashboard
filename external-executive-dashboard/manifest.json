@@ -1,12 +1,14 @@
 {
-  "name": "APFC Project Dashboard",
-  "short_name": "APFC Dashboard",
-  "description": "Progressive Web Application for APFC Pile Construction Tracking",
-  "start_url": "./index.html",
+  "background_color": "#ffffff",
+  "description": "Progressive Web Application for APFC Management Dashboard",
+  "dir": "ltr",
   "display": "standalone",
-  "background_color": "#06080b",
-  "theme_color": "#06080b",
-  "orientation": "portrait-primary",
+  "name": "APFC - Management Dashboard",
+  "orientation": "any",
+  "scope": "./",
+  "short_name": "APFC - Management Dashboard",
+  "start_url": "./index.html",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "./assets/APFC_Logo.png",

@@ -7,7 +7,8 @@
       manpower: 'manpower',
       manpowers: 'manpowers',
       equipment: 'equipment',
-      dailyrigs: 'dailyrigs'
+      dailyrigs: 'dailyrigs',
+      rigproduction: 'rigproduction'
     };
     const ACCESS_REQUEST_EMAIL = 'yasser.alsebaee@granadaeurope.com';
     const DEFAULT_PROJECT = 'Titania';
@@ -174,6 +175,16 @@
       utilizationLmTicks: document.getElementById('utilizationLmTicks'),
       utilizationLegend: document.getElementById('utilizationLegend'),
       utilizationChartWrap: document.getElementById('utilizationChartWrap'),
+      utilizationViewButtons: Array.from(document.querySelectorAll('[data-util-view]')),
+      utilizationMatrixView: document.getElementById('utilizationMatrixView'),
+      utilizationTimelineView: document.getElementById('utilizationTimelineView'),
+      utilizationTimelineTag: document.getElementById('utilizationTimelineTag'),
+      utilizationTimelineSummary: document.getElementById('utilizationTimelineSummary'),
+      utilizationTimelineLegend: document.getElementById('utilizationTimelineLegend'),
+      utilizationTimelineWrap: document.getElementById('utilizationTimelineWrap'),
+      utilizationTimelineSvg: document.getElementById('utilizationTimelineSvg'),
+      utilizationTimelineTooltip: document.getElementById('utilizationTimelineTooltip'),
+      utilizationTimelineFootnote: document.getElementById('utilizationTimelineFootnote'),
       projectMapFrame: document.getElementById('projectMapFrame'),
       navButtons: Array.from(document.querySelectorAll('.nav-btn')),
       prodSvgs: {
@@ -194,6 +205,7 @@
     let companyManpowerRows = [];
     let equipmentRegistryRows = [];
     let dailyReportEquipmentRows = [];
+    let rigProductionRows = [];
     let usersDirectory = [];
     let currentUser = null;
     let pendingExternalAuth = null;
@@ -212,6 +224,7 @@
     let companyAnalyticsDesignationFilter = 'all';
     let companyHeatmapExpandedDesignations = new Set();
     let utilizationMode = 'daily';
+    let utilizationView = 'matrix';
     let overviewDateMode = 'shift'; // shared reporting mode for Overview + Production only
     let overviewActivityMode = 'piles';
     let prodState = {
@@ -261,6 +274,39 @@
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
+    }
+
+    function extractRigProductionList(data) {
+      const items = Array.isArray(data) ? data : (!data || typeof data !== 'object' ? [] : [data.body, data.rows, data.items, data.data].find(Array.isArray) || []);
+      return items.filter(row => {
+        const keys = Object.keys(row || {}).map(key => key.toLowerCase());
+        return keys.includes('project') && keys.includes('rig') && keys.includes('from') && keys.includes('to');
+      });
+    }
+
+    function sanitizeRigProductionRow(row) {
+      const fromValue = row?.from || row?.From;
+      const toValue = row?.to || row?.To;
+      const fromDate = fromValue ? new Date(fromValue) : null;
+      const toDate = toValue ? new Date(toValue) : null;
+      const durationHours = (fromDate instanceof Date && !Number.isNaN(fromDate.getTime()) && toDate instanceof Date && !Number.isNaN(toDate.getTime()))
+        ? Math.max(0, (toDate.getTime() - fromDate.getTime()) / 3600000)
+        : 0;
+      const depthValue = Number(row?.depth ?? row?.Depth ?? 0);
+      return {
+        project: getCompanyProjectLabel(row?.project || row?.Project),
+        projectRaw: normalizeText(row?.project || row?.Project),
+        plot: normalizeText(row?.plot || row?.Plot),
+        pileId: normalizeText(row?.pileid || row?.pileId || row?.PileID),
+        activityType: normalizeText(row?.activitytype || row?.activityType || row?.ActivityType),
+        contractor: normalizeText(row?.contractor || row?.Contractor),
+        rig: normalizeText(row?.rig || row?.Rig),
+        from: fromValue || '',
+        to: toValue || '',
+        date: normalizeDateString(fromValue || toValue),
+        durationHours,
+        drilledLm: Number.isFinite(depthValue) && depthValue > 0 ? depthValue : 0
+      };
     }
 
     function extractPileList(data) {
@@ -4148,6 +4194,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       if (target.closest('.chart-tooltip')) return;
       hideTooltip();
       hideTimelineTooltip();
+      hideUtilizationTimelineTooltip();
       if (typeof window.hideCostTtp === 'function') window.hideCostTtp();
     }
 
@@ -4340,6 +4387,14 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       } catch (err) {
         console.error('Unable to load daily report equipment source:', err);
         dailyReportEquipmentRows = [];
+      }
+
+      try {
+        const rigProductionData = await fetchWorkerJson(DATA_FILE_KEYS.rigproduction);
+        rigProductionRows = extractRigProductionList(rigProductionData);
+      } catch (err) {
+        console.error('Unable to load rig production source:', err);
+        rigProductionRows = [];
       }
 
       syncProjectScopeFromData();
@@ -5080,6 +5135,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       stickyBg.setAttribute('stroke-width', '1');
       stickyBg.setAttribute('data-sticky-lane-bg', '1');
       svg.appendChild(stickyBg);
+
+
+
 
       lanes.forEach((lane, idx) => {
         const y = laneTops[idx];
@@ -7541,89 +7599,14 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }, {});
     }
 
-    function getUtilizationRows(project) {
-      const rows = getRowsForProject(project);
+    function consolidateUtilizationRows(rows) {
       const grouped = new Map();
-      const reportRigsByDate = getActiveDailyReportRigNamesByDate(project);
-
-      const getDrillingHoursForUtilization = row => {
-        const direct = Number(row?.asbuilt_durationdrilling);
-        if (Number.isFinite(direct) && direct >= 0) return direct;
-        const drillStart = getRowDate(row, ['asbuilt_drillingStart']);
-        const drillEnd = getRowDate(row, ['asbuilt_drillingEnd']);
-        return hoursBetween(drillStart, drillEnd) || 0;
-      };
-
-      const getRigEntriesForUtilization = row => {
-        const primaryRig = normalizeText(row?.machine);
-        const secondaryRig = normalizeText(row?.machine2);
-        const primaryDepthRaw = Number(row?.machine1depth);
-        const secondaryDepthRaw = Number(row?.machine2depth);
-        const primaryDepth = Number.isFinite(primaryDepthRaw) && primaryDepthRaw > 0 ? primaryDepthRaw : 0;
-        const secondaryDepth = Number.isFinite(secondaryDepthRaw) && secondaryDepthRaw > 0 ? secondaryDepthRaw : 0;
-        const totalDrillingHours = getDrillingHoursForUtilization(row);
-        const splitDepthTotal = primaryDepth + secondaryDepth;
-        const entries = [];
-
-        if (primaryRig) {
-          const drilledLm = primaryDepth;
-          const drillingHours = secondaryRig && splitDepthTotal > 0
-            ? totalDrillingHours * (primaryDepth / splitDepthTotal)
-            : totalDrillingHours;
-          entries.push({
-            rig: primaryRig,
-            drilledLm,
-            drillingHours
-          });
-        }
-
-        if (secondaryRig) {
-          const drillingHours = splitDepthTotal > 0
-            ? totalDrillingHours * (secondaryDepth / splitDepthTotal)
-            : 0;
-          entries.push({
-            rig: secondaryRig,
-            drilledLm: secondaryDepth,
-            drillingHours
-          });
-        }
-
-        return entries.filter(entry => entry.rig);
-      };
-
-      const utilizationCandidates = rows.filter(row => {
-        const dateKey = getOverviewDateKey(row);
-        const rigEntries = getRigEntriesForUtilization(row);
-        const drillingHours = getDrillingHoursForUtilization(row);
-        const hasExecutionFlag = row?.isExecuted === true;
-        const hasConcreteEnd = !!getRowDate(row, ['asbuilt_concreteEnd']);
-        return !!dateKey && rigEntries.length > 0 && (hasExecutionFlag || hasConcreteEnd || drillingHours > 0);
-      });
-
-      utilizationCandidates.forEach(row => {
-        const dateKey = getOverviewDateKey(row);
-        const rigEntries = getRigEntriesForUtilization(row);
-        if (!dateKey || !rigEntries.length) return;
-        rigEntries.forEach(entry => {
-          const key = `${dateKey}__${entry.rig}`;
-          if (!grouped.has(key)) {
-            grouped.set(key, { date: dateKey, rig: entry.rig, drillingHours: 0, drilledLm: 0, shiftHours: 12 });
-          }
-          grouped.get(key).drillingHours += entry.drillingHours;
-          grouped.get(key).drilledLm += entry.drilledLm;
-        });
-      });
-
-      const utilizationDates = Array.from(new Set([
-        ...Array.from(grouped.values()).map(item => item.date).filter(Boolean),
-        ...Array.from(reportRigsByDate.keys())
-      ])).sort();
-
-      utilizationDates.forEach(dateKey => {
-        const reportRigs = Array.from(reportRigsByDate.get(dateKey) || []).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-        reportRigs.forEach(rig => {
-          const key = `${dateKey}__${rig}`;
-          if (grouped.has(key)) return;
+      rows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        const rig = normalizeText(row?.rig);
+        if (!dateKey || !rig) return;
+        const key = `${dateKey}__${rig}`;
+        if (!grouped.has(key)) {
           grouped.set(key, {
             date: dateKey,
             rig,
@@ -7631,9 +7614,15 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             drilledLm: 0,
             shiftHours: 12
           });
-        });
+        }
+        const item = grouped.get(key);
+        item.drillingHours += Number.isFinite(Number(row?.drillingHours)) ? Number(row.drillingHours) : 0;
+        item.drilledLm += Number.isFinite(Number(row?.drilledLm)) ? Number(row.drilledLm) : 0;
+        const candidateShiftHours = Number(row?.shiftHours);
+        if (Number.isFinite(candidateShiftHours) && candidateShiftHours > 0) {
+          item.shiftHours = Math.max(item.shiftHours, candidateShiftHours);
+        }
       });
-
       return Array.from(grouped.values())
         .map(item => ({
           ...item,
@@ -7642,14 +7631,38 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         .sort((a, b) => b.date.localeCompare(a.date) || a.rig.localeCompare(b.rig, undefined, { numeric: true }));
     }
 
+    function getUtilizationRows(project) {
+      const targetProjectToken = getCompanyProjectToken(project || selectedProject || DEFAULT_PROJECT);
+      const normalizedSelectedPlot = normalizeText(selectedPlot);
+      const filteredRows = rigProductionRows
+        .map(sanitizeRigProductionRow)
+        .filter(item => item.rig && item.date)
+        .filter(item => getCompanyProjectToken(item.projectRaw || item.project) === targetProjectToken)
+        .filter(item => {
+          if (isAllPlotsValue(normalizedSelectedPlot)) return true;
+          const rowPlot = normalizeText(item.plot);
+          return rowPlot === normalizedSelectedPlot || isAllPlotsValue(rowPlot);
+        })
+        .map(row => ({
+          date: row.date,
+          rig: row.rig,
+          drillingHours: row.durationHours,
+          drilledLm: row.drilledLm,
+          shiftHours: 12
+        }));
+
+      return consolidateUtilizationRows(filteredRows);
+    }
+
     function buildUtilizationSeries(rows, mode = utilizationMode) {
-      if (!rows.length) return { dates: [], rigs: [], series: [], colors: {} };
-      const dates = Array.from(new Set(rows.map(row => row.date))).sort();
-      const rigs = Array.from(new Set(rows.map(row => row.rig))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const normalizedRows = consolidateUtilizationRows(rows);
+      if (!normalizedRows.length) return { dates: [], rigs: [], series: [], colors: {} };
+      const dates = Array.from(new Set(normalizedRows.map(row => row.date))).sort();
+      const rigs = Array.from(new Set(normalizedRows.map(row => row.rig))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       const colors = getUtilizationRigColors(rigs);
 
       const byRigDate = new Map();
-      rows.forEach(row => {
+      normalizedRows.forEach(row => {
         byRigDate.set(`${row.rig}__${row.date}`, row);
       });
 
@@ -7710,8 +7723,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     }
 
     function getUtilizationDayGroups(rows) {
+      const normalizedRows = consolidateUtilizationRows(rows);
       const grouped = new Map();
-      rows.forEach(row => {
+      normalizedRows.forEach(row => {
         if (!grouped.has(row.date)) grouped.set(row.date, []);
         grouped.get(row.date).push(row);
       });
@@ -7726,6 +7740,809 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             totalUtilization: shiftHours > 0 ? (drillingHours / shiftHours) * 100 : 0
           };
         });
+    }
+
+    function getUtilizationTimelineActivities(project) {
+      const targetProjectToken = getCompanyProjectToken(project || selectedProject || DEFAULT_PROJECT);
+      const normalizedSelectedPlot = normalizeText(selectedPlot);
+      return rigProductionRows
+        .map(sanitizeRigProductionRow)
+        .filter(item => item.rig && item.from && item.to)
+        .filter(item => getCompanyProjectToken(item.projectRaw || item.project) === targetProjectToken)
+        .filter(item => {
+          if (isAllPlotsValue(normalizedSelectedPlot)) return true;
+          const rowPlot = normalizeText(item.plot);
+          return rowPlot === normalizedSelectedPlot || isAllPlotsValue(rowPlot);
+        })
+        .map(item => {
+          const start = new Date(item.from);
+          const end = new Date(item.to);
+          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null;
+          return {
+            ...item,
+            start,
+            end,
+            activityLabel: formatRigActivityLabel(item.activityType),
+            activityKey: normalizeRigActivityKey(item.activityType)
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.start - b.start || a.rig.localeCompare(b.rig, undefined, { numeric: true }));
+    }
+
+    function normalizeRigActivityKey(value) {
+      const normalized = normalizeText(value).toLowerCase();
+      if (!normalized) return 'other';
+      if (normalized.includes('punch')) return 'punching';
+      if (normalized.includes('drill')) return 'drilling';
+      if (normalized.includes('bore')) return 'drilling';
+      if (normalized.includes('clean')) return 'cleaning';
+      if (normalized.includes('ream')) return 'reaming';
+      if (normalized.includes('casing')) return 'casing';
+      if (normalized.includes('test')) return 'testing';
+      return normalized.replace(/[^a-z0-9]+/g, '-');
+    }
+
+    function formatRigActivityLabel(value) {
+      const normalized = normalizeText(value);
+      if (!normalized) return 'Activity';
+      return normalized
+        .split(/[\s_-]+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+    }
+
+    function getUtilizationTimelineActivityColor(activityKey) {
+      const palette = {
+        punching: '#8ef0bf',
+        drilling: '#6ee7ff',
+        cleaning: '#f5d97a',
+        reaming: '#8fb7ff',
+        casing: '#d7a6ff',
+        testing: '#ffa970',
+        other: '#9fb0c6'
+      };
+      return palette[activityKey] || palette.other;
+    }
+
+    function showUtilizationTimelineTooltip(evt, html) {
+      const tooltip = els.utilizationTimelineTooltip;
+      if (!tooltip) return;
+      tooltip.innerHTML = html;
+      tooltip.classList.add('visible');
+      const rect = tooltip.getBoundingClientRect();
+      let left = evt.clientX + 14;
+      let top = evt.clientY + 14;
+      if (left + rect.width > window.innerWidth - 10) left = evt.clientX - rect.width - 14;
+      if (top + rect.height > window.innerHeight - 10) top = evt.clientY - rect.height - 14;
+      tooltip.style.left = `${Math.max(8, left)}px`;
+      tooltip.style.top = `${Math.max(8, top)}px`;
+    }
+
+    function hideUtilizationTimelineTooltip() {
+      const tooltip = els.utilizationTimelineTooltip;
+      if (!tooltip) return;
+      tooltip.classList.remove('visible');
+      tooltip.innerHTML = '';
+      tooltip.style.left = '';
+      tooltip.style.top = '';
+    }
+
+    function renderUtilizationTimeline(project) {
+      const wrap = els.utilizationTimelineWrap;
+      const svg = els.utilizationTimelineSvg;
+      if (!wrap || !svg) return;
+
+      const activities = getUtilizationTimelineActivities(project);
+      clearSvgGroup(svg);
+      hideUtilizationTimelineTooltip();
+
+      if (els.utilizationTimelineSummary) {
+        if (!activities.length) {
+          els.utilizationTimelineSummary.innerHTML = `
+            <div class="utilization-timeline-summary-card is-empty">
+              <span class="utilization-timeline-summary-label">No timeline data available</span>
+              <strong class="utilization-timeline-summary-value">0</strong>
+              <span class="utilization-timeline-summary-meta">No drilling windows found for the current scope.</span>
+            </div>
+          `;
+        }
+      }
+
+      if (els.utilizationTimelineLegend) {
+        const legendEntries = Array.from(new Set(activities.map(item => item.activityKey))).map(key => ({
+          key,
+          label: activities.find(item => item.activityKey === key)?.activityLabel || formatRigActivityLabel(key),
+          color: getUtilizationTimelineActivityColor(key)
+        }));
+        els.utilizationTimelineLegend.innerHTML = legendEntries.map(entry => `
+          <span class="utilization-timeline-legend-item">
+            <span class="utilization-timeline-legend-swatch" style="background:${entry.color};"></span>
+            ${escapeHtml(entry.label)}
+          </span>
+        `).join('');
+      }
+
+      if (!activities.length) {
+        if (els.utilizationTimelineTag) els.utilizationTimelineTag.textContent = 'No Data';
+        if (els.utilizationTimelineFootnote) {
+          els.utilizationTimelineFootnote.textContent = 'No drilling windows are available for the current project and plot scope.';
+        }
+        svg.setAttribute('viewBox', '0 0 1200 420');
+        svg.setAttribute('width', '1200');
+        svg.setAttribute('height', '420');
+        svg.style.width = '100%';
+        svg.style.height = '420px';
+        const empty = svgEl('text', {
+          x: '600',
+          y: '210',
+          'text-anchor': 'middle',
+          fill: 'rgba(244,247,251,0.62)',
+          'font-size': '16',
+          'font-weight': '700'
+        });
+        empty.textContent = 'No drilling timeline data available';
+        svg.appendChild(empty);
+        return;
+      }
+
+      const rigs = Array.from(new Set(activities.map(item => item.rig))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const rigMeta = new Map(rigs.map(rig => {
+        const rigRows = activities.filter(item => item.rig === rig);
+        const totalHours = rigRows.reduce((sum, item) => sum + item.durationHours, 0);
+        const totalLm = rigRows.reduce((sum, item) => sum + item.drilledLm, 0);
+        return [rig, {
+          totalHours,
+          totalLm,
+          windowCount: rigRows.length,
+          contractor: normalizeText(rigRows[0]?.contractor)
+        }];
+      }));
+
+      const minStart = activities.reduce((min, item) => item.start < min ? item.start : min, activities[0].start);
+      const maxEnd = activities.reduce((max, item) => item.end > max ? item.end : max, activities[0].end);
+      const axisStart = new Date(minStart.getTime());
+      axisStart.setHours(0, 0, 0, 0);
+      const axisEnd = new Date(maxEnd.getTime());
+      axisEnd.setHours(24, 0, 0, 0);
+      const totalHours = Math.max(1, (axisEnd.getTime() - axisStart.getTime()) / 3600000);
+
+      const laneLabelW = 220;
+      const right = 28;
+      const top = 78;
+      const bottom = 44;
+      const laneH = 54;
+      const laneGap = 12;
+      const minTimelineWidth = Math.max((wrap.clientWidth || 980) - 6, 960);
+      const pxPerHour = totalHours <= 24 ? 34 : totalHours <= 72 ? 18 : totalHours <= 168 ? 10.5 : 7.2;
+      const plotW = Math.max(minTimelineWidth - laneLabelW - right, totalHours * pxPerHour);
+      const width = laneLabelW + plotW + right;
+      const height = top + rigs.length * laneH + Math.max(0, rigs.length - 1) * laneGap + bottom;
+
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      svg.style.width = `${width}px`;
+      svg.style.height = `${height}px`;
+
+      const plotStartX = laneLabelW;
+      const plotEndX = width - right;
+      const hoursToX = date => plotStartX + ((date.getTime() - axisStart.getTime()) / 3600000) * (plotW / totalHours);
+
+      svg.appendChild(svgEl('rect', {
+        x: '0',
+        y: '0',
+        width: String(laneLabelW - 18),
+        height: String(height),
+        fill: 'rgba(6,9,13,0.98)'
+      }));
+
+      const dayCount = Math.ceil(totalHours / 24);
+      for (let i = 0; i <= dayCount; i += 1) {
+        const dt = new Date(axisStart.getTime() + i * 24 * 3600000);
+        const x = hoursToX(dt);
+        svg.appendChild(svgEl('line', {
+          x1: String(x),
+          y1: String(top - 10),
+          x2: String(x),
+          y2: String(height - bottom + 4),
+          stroke: 'rgba(255,255,255,0.16)',
+          'stroke-width': '1'
+        }));
+        if (i < dayCount) {
+          const dayLabel = svgEl('text', {
+            x: String(x + 6),
+            y: String(top - 20),
+            class: 'utilization-timeline-axis-text'
+          });
+          dayLabel.textContent = formatTimelineHeaderDate(dt);
+          svg.appendChild(dayLabel);
+        }
+      }
+
+      const sixHourTicks = Math.floor(totalHours / 6);
+      for (let i = 0; i <= sixHourTicks; i += 1) {
+        const dt = new Date(axisStart.getTime() + i * 6 * 3600000);
+        const x = hoursToX(dt);
+        const minorTick = svgEl('line', {
+          x1: String(x),
+          y1: String(top - 2),
+          x2: String(x),
+          y2: String(top + rigs.length * laneH + Math.max(0, rigs.length - 1) * laneGap),
+          stroke: 'rgba(255,255,255,0.03)',
+          'stroke-width': '1'
+        });
+        svg.appendChild(minorTick);
+      }
+
+      rigs.forEach((rig, index) => {
+        const laneY = top + index * (laneH + laneGap);
+        const centerY = laneY + laneH / 2;
+        const meta = rigMeta.get(rig);
+
+        const laneBg = svgEl('rect', {
+          x: String(plotStartX),
+          y: String(laneY),
+          width: String(plotW),
+          height: String(laneH),
+          rx: '16',
+          fill: index % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.015)',
+          stroke: 'rgba(255,255,255,0.05)',
+          'stroke-width': '1'
+        });
+        svg.appendChild(laneBg);
+
+        const rigLabel = svgEl('text', {
+          x: '14',
+          y: String(centerY - 4),
+          class: 'utilization-timeline-rig-label'
+        });
+        rigLabel.textContent = rig;
+        svg.appendChild(rigLabel);
+
+        const rigMetaText = svgEl('text', {
+          x: '14',
+          y: String(centerY + 14),
+          class: 'utilization-timeline-rig-meta'
+        });
+        rigMetaText.textContent = `${formatNumberOneDecimal(meta.totalHours)} hr • ${formatNumberOneDecimal(meta.totalLm)} m • ${meta.windowCount} window${meta.windowCount === 1 ? '' : 's'}`;
+        svg.appendChild(rigMetaText);
+
+        const laneItems = activities.filter(item => item.rig === rig);
+        laneItems.forEach(item => {
+          const x = hoursToX(item.start);
+          const endX = hoursToX(item.end);
+          const barW = Math.max(10, endX - x);
+          const barY = laneY + 8;
+          const barH = laneH - 16;
+          const color = getUtilizationTimelineActivityColor(item.activityKey);
+
+          const bar = svgEl('rect', {
+            x: String(x),
+            y: String(barY),
+            width: String(barW),
+            height: String(barH),
+            rx: '9',
+            fill: color,
+            'fill-opacity': barW < 26 ? '0.92' : '0.88',
+            stroke: 'rgba(255,255,255,0.18)',
+            'stroke-width': '1'
+          });
+          svg.appendChild(bar);
+
+          const innerGlow = svgEl('rect', {
+            x: String(x + 1),
+            y: String(barY + 1),
+            width: String(Math.max(0, barW - 2)),
+            height: String(Math.max(0, barH - 2)),
+            rx: '8',
+            fill: 'rgba(255,255,255,0.06)'
+          });
+          svg.appendChild(innerGlow);
+
+          if (barW > 66) {
+            const label = svgEl('text', {
+              x: String(x + barW / 2),
+              y: String(barY + barH / 2 + 4),
+              class: 'utilization-timeline-bar-label'
+            });
+            label.textContent = item.pileId || item.activityLabel;
+            svg.appendChild(label);
+          }
+
+          const hit = svgEl('rect', {
+            x: String(x),
+            y: String(barY),
+            width: String(Math.max(12, barW)),
+            height: String(barH),
+            fill: 'transparent'
+          });
+          hit.style.cursor = 'pointer';
+          const tooltipHtml = `
+            <div class="tooltip-title">${escapeHtml(item.rig)}</div>
+            <div class="tooltip-row"><span>Activity</span><strong>${escapeHtml(item.activityLabel)}</strong></div>
+            <div class="tooltip-row"><span>Element</span><strong>${escapeHtml(item.pileId || '-')}</strong></div>
+            <div class="tooltip-row"><span>From</span><strong>${formatDateTimeLabel(item.start)}</strong></div>
+            <div class="tooltip-row"><span>To</span><strong>${formatDateTimeLabel(item.end)}</strong></div>
+            <div class="tooltip-row"><span>Duration</span><strong>${formatNumberOneDecimal(item.durationHours)} hr</strong></div>
+            <div class="tooltip-row"><span>Depth</span><strong>${item.drilledLm > 0 ? `${formatNumberOneDecimal(item.drilledLm)} m` : '-'}</strong></div>
+            <div class="tooltip-row"><span>Contractor</span><strong>${escapeHtml(item.contractor || '-')}</strong></div>
+          `;
+          hit.addEventListener('pointerenter', evt => showUtilizationTimelineTooltip(evt, tooltipHtml));
+          hit.addEventListener('pointermove', evt => showUtilizationTimelineTooltip(evt, tooltipHtml));
+          hit.addEventListener('pointerleave', hideUtilizationTimelineTooltip);
+          svg.appendChild(hit);
+        });
+      });
+
+      if (els.utilizationTimelineSummary) {
+        const totalHoursWorked = activities.reduce((sum, item) => sum + item.durationHours, 0);
+        const totalLm = activities.reduce((sum, item) => sum + item.drilledLm, 0);
+        const firstDay = formatDateFullLabel(normalizeDateString(minStart.toISOString()));
+        const lastDay = formatDateFullLabel(normalizeDateString(maxEnd.toISOString()));
+        els.utilizationTimelineSummary.innerHTML = `
+          <div class="utilization-timeline-summary-card">
+            <span class="utilization-timeline-summary-label">Active Rigs</span>
+            <strong class="utilization-timeline-summary-value">${rigs.length}</strong>
+            <span class="utilization-timeline-summary-meta">Machines with reported drilling windows in current scope</span>
+          </div>
+          <div class="utilization-timeline-summary-card">
+            <span class="utilization-timeline-summary-label">Recorded Windows</span>
+            <strong class="utilization-timeline-summary-value">${activities.length}</strong>
+            <span class="utilization-timeline-summary-meta">${firstDay} to ${lastDay}</span>
+          </div>
+          <div class="utilization-timeline-summary-card">
+            <span class="utilization-timeline-summary-label">Total Working Hours</span>
+            <strong class="utilization-timeline-summary-value">${formatNumberOneDecimal(totalHoursWorked)} hr</strong>
+            <span class="utilization-timeline-summary-meta">${formatNumberOneDecimal(totalLm)} drilled meters recorded</span>
+          </div>
+        `;
+      }
+
+      if (els.utilizationTimelineTag) {
+        els.utilizationTimelineTag.textContent = `${rigs.length} Rig${rigs.length === 1 ? '' : 's'}`;
+      }
+      if (els.utilizationTimelineFootnote) {
+        els.utilizationTimelineFootnote.textContent = 'Bars reflect the exact reported drilling windows per machine. Hover a bar for element, duration, depth, and contractor details.';
+      }
+
+      wrap.onpointerleave = hideUtilizationTimelineTooltip;
+      wrap.onscroll = hideUtilizationTimelineTooltip;
+
+      requestAnimationFrame(() => {
+        if (wrap.scrollWidth > wrap.clientWidth + 4) {
+          wrap.scrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+        } else {
+          wrap.scrollLeft = 0;
+        }
+      });
+    }
+
+    function renderUtilizationTimelineBoard(project) {
+      const wrap = els.utilizationTimelineWrap;
+      const svg = els.utilizationTimelineSvg;
+      if (!wrap || !svg) return;
+
+      const activities = getUtilizationTimelineActivities(project);
+      clearSvgGroup(svg);
+      hideUtilizationTimelineTooltip();
+
+      if (els.utilizationTimelineLegend) {
+        const legendEntries = Array.from(new Set(activities.map(item => item.activityKey))).map(key => ({
+          key,
+          label: activities.find(item => item.activityKey === key)?.activityLabel || formatRigActivityLabel(key),
+          color: getUtilizationTimelineActivityColor(key)
+        }));
+        els.utilizationTimelineLegend.innerHTML = legendEntries.map(entry => `
+          <span class="utilization-timeline-legend-item">
+            <span class="utilization-timeline-legend-swatch" style="background:${entry.color};"></span>
+            ${escapeHtml(entry.label)}
+          </span>
+        `).join('');
+      }
+
+      if (!activities.length) {
+        if (els.utilizationTimelineSummary) {
+          els.utilizationTimelineSummary.innerHTML = '';
+        }
+        if (els.utilizationTimelineTag) els.utilizationTimelineTag.textContent = 'No Data';
+        if (els.utilizationTimelineFootnote) {
+          els.utilizationTimelineFootnote.textContent = 'No drilling windows are available for the current project and plot scope.';
+        }
+        svg.setAttribute('viewBox', '0 0 1200 420');
+        svg.setAttribute('width', '1200');
+        svg.setAttribute('height', '420');
+        svg.style.width = '100%';
+        svg.style.height = '420px';
+        const empty = svgEl('text', {
+          x: '600',
+          y: '210',
+          'text-anchor': 'middle',
+          fill: 'rgba(244,247,251,0.62)',
+          'font-size': '16',
+          'font-weight': '700'
+        });
+        empty.textContent = 'No drilling timeline data available';
+        svg.appendChild(empty);
+        return;
+      }
+
+      const rigs = Array.from(new Set(activities.map(item => item.rig))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      const rigMeta = new Map(rigs.map(rig => {
+        const rigRows = activities.filter(item => item.rig === rig);
+        const drillingRows = rigRows.filter(item => item.activityKey === 'drilling' || item.activityKey === 'punching');
+        const drillingHours = drillingRows.reduce((sum, item) => sum + item.durationHours, 0);
+        const drilledLm = drillingRows.reduce((sum, item) => sum + item.drilledLm, 0);
+        return [rig, {
+          drillingHours,
+          drilledLm,
+          avgLmPerHour: drillingHours > 0 ? drilledLm / drillingHours : 0,
+          windowCount: rigRows.length,
+          hasPunching: rigRows.some(item => item.activityKey === 'punching'),
+          hasNonPunching: rigRows.some(item => item.activityKey !== 'punching'),
+          rows: rigRows
+        }];
+      }));
+
+      const minStart = activities.reduce((min, item) => item.start < min ? item.start : min, activities[0].start);
+      const maxEnd = activities.reduce((max, item) => item.end > max ? item.end : max, activities[0].end);
+      const axisStart = new Date(minStart.getTime());
+      axisStart.setHours(0, 0, 0, 0);
+      const axisEnd = new Date(maxEnd.getTime());
+      axisEnd.setHours(24, 0, 0, 0);
+      const totalHours = Math.max(1, (axisEnd.getTime() - axisStart.getTime()) / 3600000);
+
+      const laneLabelW = 196;
+      const stickyPaneW = laneLabelW - 12;
+      const subrowColW = 64;
+      const subrowColX = stickyPaneW - subrowColW - 4;
+      const right = 28;
+      const top = 74;
+      const bottom = 44;
+      const singleLaneH = 54;
+      const splitLaneH = 80;
+      const laneGap = 12;
+      const minTimelineWidth = Math.max((wrap.clientWidth || 980) - 6, 960);
+      const pxPerHour = totalHours <= 24 ? 34 : totalHours <= 72 ? 18 : totalHours <= 168 ? 10.5 : 7.2;
+      const plotW = Math.max(minTimelineWidth - laneLabelW - right, totalHours * pxPerHour);
+      const width = laneLabelW + plotW + right;
+      const laneTops = [];
+      let laneCursor = top;
+      rigs.forEach((rig, index) => {
+        laneTops[index] = laneCursor;
+        const meta = rigMeta.get(rig);
+        laneCursor += (meta.hasPunching && meta.hasNonPunching ? splitLaneH : singleLaneH) + laneGap;
+      });
+      const height = laneCursor - laneGap + bottom;
+
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      svg.style.width = `${width}px`;
+      svg.style.height = `${height}px`;
+
+      const plotStartX = laneLabelW;
+      const plotEndX = width - right;
+      const hoursToX = date => plotStartX + ((date.getTime() - axisStart.getTime()) / 3600000) * (plotW / totalHours);
+
+      const dayCount = Math.ceil(totalHours / 24);
+      for (let i = 0; i <= dayCount; i += 1) {
+        const dt = new Date(axisStart.getTime() + i * 24 * 3600000);
+        const x = hoursToX(dt);
+        svg.appendChild(svgEl('line', {
+          x1: String(x),
+          y1: String(top - 10),
+          x2: String(x),
+          y2: String(height - bottom + 4),
+          stroke: 'rgba(255,255,255,0.16)',
+          'stroke-width': '1'
+        }));
+        if (i < dayCount) {
+          const dayLabel = svgEl('text', {
+            x: String(x + 6),
+            y: String(top - 20),
+            class: 'utilization-timeline-axis-text'
+          });
+          dayLabel.textContent = formatTimelineHeaderDate(dt);
+          svg.appendChild(dayLabel);
+        }
+      }
+
+      const sixHourTicks = Math.floor(totalHours / 6);
+      for (let i = 0; i <= sixHourTicks; i += 1) {
+        const dt = new Date(axisStart.getTime() + i * 6 * 3600000);
+        const x = hoursToX(dt);
+        svg.appendChild(svgEl('line', {
+          x1: String(x),
+          y1: String(top - 2),
+          x2: String(x),
+          y2: String(height - bottom + 4),
+          stroke: 'rgba(255,255,255,0.03)',
+          'stroke-width': '1'
+        }));
+      }
+
+      rigs.forEach((rig, index) => {
+        const laneY = laneTops[index];
+        const meta = rigMeta.get(rig);
+        const laneH = meta.hasPunching && meta.hasNonPunching ? splitLaneH : singleLaneH;
+
+        svg.appendChild(svgEl('rect', {
+          x: String(plotStartX),
+          y: String(laneY),
+          width: String(plotW),
+          height: String(laneH),
+          rx: '16',
+          fill: index % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(255,255,255,0.015)',
+          stroke: 'rgba(255,255,255,0.05)',
+          'stroke-width': '1'
+        }));
+
+
+        if (meta.hasPunching && meta.hasNonPunching) {
+          svg.appendChild(svgEl('line', {
+            x1: String(plotStartX),
+            y1: String(laneY + laneH / 2),
+            x2: String(plotEndX),
+            y2: String(laneY + laneH / 2),
+            stroke: 'rgba(255,255,255,0.20)',
+            'stroke-width': '1',
+            'stroke-dasharray': '4 7'
+          }));
+
+        }
+
+        meta.rows.forEach(item => {
+          const x = hoursToX(item.start);
+          const endX = hoursToX(item.end);
+          const barW = Math.max(10, endX - x);
+          const barH = meta.hasPunching && meta.hasNonPunching ? 24 : laneH - 16;
+          const barY = meta.hasPunching && meta.hasNonPunching
+            ? (item.activityKey === 'punching' ? laneY + 8 : laneY + laneH / 2 + 8)
+            : laneY + 8;
+          const color = getUtilizationTimelineActivityColor(item.activityKey);
+
+          svg.appendChild(svgEl('rect', {
+            x: String(x),
+            y: String(barY),
+            width: String(barW),
+            height: String(barH),
+            rx: '5',
+            fill: color,
+            'fill-opacity': barW < 26 ? '0.92' : '0.88',
+            stroke: 'rgba(255,255,255,0.18)',
+            'stroke-width': '1'
+          }));
+
+          svg.appendChild(svgEl('rect', {
+            x: String(x + 1),
+            y: String(barY + 1),
+            width: String(Math.max(0, barW - 2)),
+            height: String(Math.max(0, barH - 2)),
+            rx: '4',
+            fill: 'rgba(255,255,255,0.06)'
+          }));
+
+          if (barW > 66) {
+            const label = svgEl('text', {
+              x: String(x + barW / 2),
+              y: String(barY + barH / 2 + 4),
+              class: 'utilization-timeline-bar-label'
+            });
+            label.textContent = item.pileId || item.activityLabel;
+            svg.appendChild(label);
+          }
+
+          const hit = svgEl('rect', {
+            x: String(x),
+            y: String(barY),
+            width: String(Math.max(12, barW)),
+            height: String(barH),
+            fill: 'transparent'
+          });
+          hit.style.cursor = 'pointer';
+          const tooltipHtml = `
+            <div class="tooltip-title">${escapeHtml(item.rig)}</div>
+            <div class="tooltip-row"><span>Activity</span><strong>${escapeHtml(item.activityLabel)}</strong></div>
+            <div class="tooltip-row"><span>Element</span><strong>${escapeHtml(item.pileId || '-')}</strong></div>
+            <div class="tooltip-row"><span>From</span><strong>${formatDateTimeLabel(item.start)}</strong></div>
+            <div class="tooltip-row"><span>To</span><strong>${formatDateTimeLabel(item.end)}</strong></div>
+            <div class="tooltip-row"><span>Duration</span><strong>${formatNumberOneDecimal(item.durationHours)} hr</strong></div>
+            <div class="tooltip-row"><span>Depth</span><strong>${item.drilledLm > 0 ? `${formatNumberOneDecimal(item.drilledLm)} m` : '-'}</strong></div>
+            <div class="tooltip-row"><span>Contractor</span><strong>${escapeHtml(item.contractor || '-')}</strong></div>
+          `;
+          hit.addEventListener('pointerenter', evt => showUtilizationTimelineTooltip(evt, tooltipHtml));
+          hit.addEventListener('pointermove', evt => showUtilizationTimelineTooltip(evt, tooltipHtml));
+          hit.addEventListener('pointerleave', hideUtilizationTimelineTooltip);
+          svg.appendChild(hit);
+        });
+      });
+
+      if (els.utilizationTimelineSummary) {
+        els.utilizationTimelineSummary.innerHTML = '';
+      }
+
+      if (els.utilizationTimelineTag) {
+        els.utilizationTimelineTag.textContent = `${rigs.length} Rig${rigs.length === 1 ? '' : 's'}`;
+      }
+      if (els.utilizationTimelineFootnote) {
+        els.utilizationTimelineFootnote.textContent = 'Bars reflect the exact reported drilling windows per machine. Hover a bar for element, duration, depth, and contractor details.';
+      }
+
+      const stickyBg = svgEl('rect', {
+        x: '0',
+        y: '0',
+        width: String(stickyPaneW),
+        height: String(height),
+        fill: 'rgba(6,8,11,0.985)',
+        stroke: 'rgba(255,255,255,0.06)',
+        'stroke-width': '1',
+        'data-base-x': '0',
+        'data-util-sticky-bg': '1'
+      });
+      svg.appendChild(stickyBg);
+
+      const stickySubcolBg = svgEl('rect', {
+        x: String(subrowColX),
+        y: '0',
+        width: String(subrowColW + 6),
+        height: String(height),
+        fill: 'rgba(255,255,255,0.038)',
+        'data-base-x': String(subrowColX),
+        'data-util-sticky-bg': '1'
+      });
+      svg.appendChild(stickySubcolBg);
+      const subcolTitle = svgEl('text', {
+        x: String(subrowColX + subrowColW / 2),
+        y: String(top - 20),
+        'text-anchor': 'middle',
+        class: 'utilization-timeline-subcol-title',
+        'data-base-x': String(subrowColX + subrowColW / 2),
+        'data-util-sticky-label': '1'
+      });
+      subcolTitle.textContent = 'ACT.';
+      svg.appendChild(subcolTitle);
+      rigs.forEach((rig, index) => {
+
+        const laneY = laneTops[index];
+        const meta = rigMeta.get(rig);
+        const laneH = meta.hasPunching && meta.hasNonPunching ? splitLaneH : singleLaneH;
+        const centerY = laneY + laneH / 2;
+
+        const rigLabel = svgEl('text', {
+          x: '12',
+          y: String(centerY - 8),
+          'text-anchor': 'start',
+          class: 'utilization-timeline-rig-label',
+          'data-base-x': '12',
+          'data-base-x': '14',
+          'data-util-sticky-label': '1'
+        });
+        rigLabel.textContent = rig;
+        svg.appendChild(rigLabel);
+
+        const rigMetaText = svgEl('text', {
+          x: '12',
+          y: String(centerY + 12),
+          'text-anchor': 'start',
+          class: 'utilization-timeline-rig-meta',
+          'data-base-x': '12',
+          'data-base-x': '14',
+          'data-util-sticky-label': '1'
+        });
+        rigMetaText.textContent = [
+          `${formatNumberOneDecimal(meta.drillingHours)} hr`,
+          `${formatNumberOneDecimal(meta.drilledLm)} m`,
+          `${formatNumberOneDecimal(meta.avgLmPerHour)} lm/hr`
+        ].join(' | ');
+        svg.appendChild(rigMetaText);
+        if (meta.hasPunching && meta.hasNonPunching) {
+          const subrowBadgeW = 58;
+          const subrowBadgeH = 16;
+          const subrowBadgeX = subrowColX + ((subrowColW - subrowBadgeW) / 2);
+
+          const punchStickyBg = svgEl('rect', {
+            x: String(subrowBadgeX),
+            y: String(laneY + 6),
+            width: String(subrowBadgeW),
+            height: String(subrowBadgeH),
+            rx: '8',
+            class: 'utilization-timeline-subrow-pill utilization-timeline-subrow-pill--punching',
+            'data-base-x': String(subrowBadgeX),
+            'data-util-sticky-label': '1'
+          });
+          svg.appendChild(punchStickyBg);
+
+          const punchSticky = svgEl('text', {
+            x: String(subrowBadgeX + subrowBadgeW / 2),
+            y: String(laneY + 17),
+            'text-anchor': 'middle',
+            class: 'utilization-timeline-subrow-label',
+            'data-base-x': String(subrowBadgeX + subrowBadgeW / 2),
+            'data-util-sticky-label': '1'
+          });
+          punchSticky.textContent = 'Punching';
+          svg.appendChild(punchSticky);
+
+          const drillStickyBg = svgEl('rect', {
+            x: String(subrowBadgeX),
+            y: String(laneY + laneH - subrowBadgeH - 6),
+            width: String(subrowBadgeW),
+            height: String(subrowBadgeH),
+            rx: '8',
+            class: 'utilization-timeline-subrow-pill utilization-timeline-subrow-pill--drilling',
+            'data-base-x': String(subrowBadgeX),
+            'data-util-sticky-label': '1'
+          });
+          svg.appendChild(drillStickyBg);
+
+          const drillSticky = svgEl('text', {
+            x: String(subrowBadgeX + subrowBadgeW / 2),
+            y: String(laneY + laneH - 11),
+            'text-anchor': 'middle',
+            class: 'utilization-timeline-subrow-label',
+            'data-base-x': String(subrowBadgeX + subrowBadgeW / 2),
+            'data-util-sticky-label': '1'
+          });
+          drillSticky.textContent = 'Drilling';
+          svg.appendChild(drillSticky);
+        }
+      });
+
+
+
+      const syncSticky = () => {
+        const scrollLeft = wrap.scrollLeft || 0;
+        svg.querySelectorAll('[data-util-sticky-label="1"]').forEach(label => {
+          const baseX = Number(label.getAttribute('data-base-x') || (stickyPaneW - 12));
+          label.setAttribute('x', String(baseX + scrollLeft));
+        });
+        svg.querySelectorAll('[data-util-sticky-bg="1"]').forEach(bg => {
+          const baseX = Number(bg.getAttribute('data-base-x') || 0);
+          bg.setAttribute('x', String(baseX + scrollLeft));
+        });
+        svg.querySelectorAll('[data-util-sticky-divider="1"]').forEach(divider => {
+          const baseX = Number(divider.getAttribute('data-base-x') || stickyPaneW);
+          divider.setAttribute('x1', String(baseX + scrollLeft));
+          divider.setAttribute('x2', String(baseX + scrollLeft));
+        });
+      };
+
+      wrap.onpointerleave = hideUtilizationTimelineTooltip;
+      wrap.onscroll = () => {
+        hideUtilizationTimelineTooltip();
+        syncSticky();
+      };
+      wrap.onwheel = evt => {
+        if (wrap.scrollWidth <= wrap.clientWidth + 4) return;
+        if (Math.abs(evt.deltaY) <= Math.abs(evt.deltaX) && evt.deltaX === 0) return;
+        evt.preventDefault();
+        wrap.scrollLeft += evt.deltaY || evt.deltaX;
+        syncSticky();
+      };
+
+      requestAnimationFrame(() => {
+        if (wrap.scrollWidth > wrap.clientWidth + 4) {
+          wrap.scrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+        } else {
+          wrap.scrollLeft = 0;
+        }
+        syncSticky();
+      });
+    }
+
+    function syncUtilizationView() {
+      const isTimeline = utilizationView === 'timeline';
+      els.utilizationViewButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.utilView === utilizationView));
+      if (els.utilizationMatrixView) {
+        els.utilizationMatrixView.classList.toggle('active', !isTimeline);
+        els.utilizationMatrixView.hidden = isTimeline;
+      }
+      if (els.utilizationTimelineView) {
+        els.utilizationTimelineView.classList.toggle('active', isTimeline);
+        els.utilizationTimelineView.hidden = !isTimeline;
+      }
     }
 
     function getUtilizationChartLayout(wrapEl, dates, rigCount, mode, chartH, options = {}) {
@@ -8689,6 +9506,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const rows = getUtilizationRows(project);
       const dayGroups = getUtilizationDayGroups(rows);
       const { colors } = buildUtilizationSeries(rows, utilizationMode);
+      syncUtilizationView();
 
       if (els.utilizationTableBody) {
         if (!rows.length) {
@@ -8698,9 +9516,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             const utilClass = row.utilization >= 75 ? 'utilization-high' : (row.utilization >= 45 ? 'utilization-mid' : 'utilization-low');
             const totalClass = group.totalUtilization >= 75 ? 'utilization-high' : (group.totalUtilization >= 45 ? 'utilization-mid' : 'utilization-low');
             const rigColor = colors[row.rig] || '#8ef0bf';
+            const rowPositionClass = idx === 0
+              ? 'utilization-row-first'
+              : (idx === group.items.length - 1 ? 'utilization-row-last' : 'utilization-row-mid');
             return `
-              <tr class="${idx === 0 ? 'utilization-group-start' : ''}">
-                ${idx === 0 ? `<td rowspan="${group.items.length}" class="utilization-date-cell">${formatDateFullLabel(group.date)}</td>` : ''}
+              <tr class="${idx === 0 ? 'utilization-group-start' : ''} ${rowPositionClass}">
+                ${idx === 0 ? `<td rowspan="${group.items.length}" class="utilization-date-cell"><div class="utilization-date-block"><span class="utilization-date-label">Day</span><strong>${formatDateFullLabel(group.date)}</strong><span class="utilization-date-meta">${group.items.length} rig${group.items.length === 1 ? '' : 's'}</span></div></td>` : ''}
                 <td>
                   <span class="utilization-rig-chip">
                     <span class="utilization-rig-dot" style="background:${rigColor};"></span>
@@ -8711,7 +9532,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
                 <td class="num">${row.drilledLm.toFixed(1)}</td>
                 <td class="num">${row.shiftHours.toFixed(1)}</td>
                 <td class="num ${utilClass}">${row.utilization.toFixed(1)}%</td>
-                ${idx === 0 ? `<td rowspan="${group.items.length}" class="num ${totalClass} utilization-total-cell">${group.totalUtilization.toFixed(1)}%</td>` : ''}
+                ${idx === 0 ? `<td rowspan="${group.items.length}" class="num ${totalClass} utilization-total-cell"><div class="utilization-total-block"><span class="utilization-total-label">Day Total</span><strong>${group.totalUtilization.toFixed(1)}%</strong></div></td>` : ''}
               </tr>
             `;
           }).join('')).join('');
@@ -8719,6 +9540,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }
 
       renderUtilizationCombinedChart(rows);
+      if (utilizationView === 'timeline') {
+        renderUtilizationTimelineBoard(project);
+      }
     }
 
     function renderManpowerPage(project) {
@@ -9001,6 +9825,16 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           renderUtilizationPage(selectedProject);
         }));
 
+        els.utilizationViewButtons.forEach(btn => btn.addEventListener('click', () => {
+          utilizationView = btn.dataset.utilView || 'matrix';
+          syncUtilizationView();
+          if (utilizationView === 'timeline') {
+            renderUtilizationTimelineBoard(selectedProject);
+          } else {
+            renderUtilizationPage(selectedProject);
+          }
+        }));
+
         els.companyManpowerLayoutSelect?.addEventListener('change', () => {
           renderCompanyManpowerPage(selectedProject);
         });
@@ -9223,5 +10057,11 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     });
   }
 })();
+
+
+
+
+
+
 
 

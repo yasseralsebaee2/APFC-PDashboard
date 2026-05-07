@@ -38,6 +38,7 @@
       dataSourceChip: document.getElementById('dataSourceChip'),
       overviewDateModeButtons: Array.from(document.querySelectorAll('#overviewDateModeToggle button')),
       refreshDashboardBtn: document.getElementById('refreshDashboardBtn'),
+      printMapPdfBtn: document.getElementById('printMapPdfBtn'),
       pageSubtitle: document.getElementById('pageSubtitle'),
       kpiTotal: document.getElementById('kpiTotal'),
       kpiExecuted: document.getElementById('kpiExecuted'),
@@ -210,6 +211,8 @@
       utilizationChartWrap: document.getElementById('utilizationChartWrap'),
       projectMapFrame: document.getElementById('projectMapFrame'),
       navButtons: Array.from(document.querySelectorAll('.nav-btn')),
+      navStacks: Array.from(document.querySelectorAll('.nav-stack')),
+      navSubButtons: Array.from(document.querySelectorAll('.nav-subbtn')),
       prodSvgs: {
         gross: document.getElementById('prodSvgGross'),
         drilling: document.getElementById('prodSvgDrilling'),
@@ -242,6 +245,7 @@
     let executiveOverviewLayout = 'matrix';
     let executiveTrendProject = 'All Projects';
     let executiveMapProject = 'All Projects';
+    let executiveMatrixSnapshots = new Map();
     let executiveChartMode = 'daily';
     let executiveChartMetric = 'piles';
     let executiveChartGranularity = 'day';
@@ -620,6 +624,14 @@
       return page === 'executive' || page === 'resources' || page === 'map';
     }
 
+    function syncTopbarPageActions(page = activePage) {
+      if (els.printMapPdfBtn) {
+        const showPrintMapPdf = page === 'map';
+        els.printMapPdfBtn.hidden = !showPrintMapPdf;
+        els.printMapPdfBtn.style.display = showPrintMapPdf ? 'inline-flex' : 'none';
+      }
+    }
+
     function updateUserContextUi() {
       if (els.pageSubtitle) els.pageSubtitle.textContent = getScopeSubtitle();
       if (els.projectScopeBtn) els.projectScopeBtn.textContent = getScopeLabel();
@@ -664,6 +676,8 @@
       if (!canAccessPage(activePage)) {
         activePage = 'executive';
       }
+
+      syncTopbarPageActions(activePage);
     }
 
     function setAuthLocked(isLocked, errorMessage = '') {
@@ -842,6 +856,381 @@
       els.projectMapFrame.contentWindow.postMessage({
         type: 'MAP_FOCUS_ANIMATE'
       }, window.location.origin);
+    }
+
+    function getPrintTimestampLabel() {
+      return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Dubai'
+      }).format(new Date());
+    }
+
+    function getProjectedPilePoint(row) {
+      const x = Number(row?.design_x ?? row?.design_X);
+      const y = Number(row?.design_y ?? row?.design_Y);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    }
+
+    function getProjectedKingPostSegment(row) {
+      const frontX = Number(row?.design_x ?? row?.design_X);
+      const frontY = Number(row?.design_y ?? row?.design_Y);
+      const backX = Number(row?.design_back_x ?? row?.design_back_X ?? row?.design_Back_X ?? row?.design_BackX ?? row?.designBackX);
+      const backY = Number(row?.design_back_y ?? row?.design_back_Y ?? row?.design_Back_Y ?? row?.design_BackY ?? row?.designBackY);
+      const hasFront = Number.isFinite(frontX) && Number.isFinite(frontY);
+      const hasBack = Number.isFinite(backX) && Number.isFinite(backY);
+      if (!hasFront && !hasBack) return null;
+      if (hasFront && hasBack) {
+        return {
+          x1: frontX,
+          y1: frontY,
+          x2: backX,
+          y2: backY,
+          cx: (frontX + backX) / 2,
+          cy: (frontY + backY) / 2
+        };
+      }
+      const x = hasFront ? frontX : backX;
+      const y = hasFront ? frontY : backY;
+      return { x1: x, y1: y, x2: x, y2: y, cx: x, cy: y };
+    }
+
+    function parseKingPostProfileForPrint(profileText) {
+      const text = normalizeText(profileText).toUpperCase();
+      const match = text.match(/(\d+(?:\.\d+)?)\s*[XÃ—]\s*(\d+(?:\.\d+)?)/);
+      const depthM = match ? (Number(match[1]) / 1000) : 0.42;
+      const widthM = match ? (Number(match[2]) / 1000) : 0.18;
+      return {
+        depthM: Number.isFinite(depthM) && depthM > 0 ? depthM : 0.42,
+        widthM: Number.isFinite(widthM) && widthM > 0 ? widthM : 0.18
+      };
+    }
+
+    function buildUbSectionLocalPath(widthPx, depthPx, flangePx, webPx) {
+      const halfW = widthPx / 2;
+      const halfD = depthPx / 2;
+      const halfWeb = webPx / 2;
+      const pts = [
+        [-halfW, -halfD],
+        [ halfW, -halfD],
+        [ halfW, -halfD + flangePx],
+        [ halfWeb, -halfD + flangePx],
+        [ halfWeb,  halfD - flangePx],
+        [ halfW,  halfD - flangePx],
+        [ halfW,  halfD],
+        [-halfW,  halfD],
+        [-halfW,  halfD - flangePx],
+        [-halfWeb, halfD - flangePx],
+        [-halfWeb, -halfD + flangePx],
+        [-halfW, -halfD + flangePx]
+      ];
+      return `M ${pts.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L ')} Z`;
+    }
+
+    function buildProjectLayoutPrintSummary(pileRows, kingRows) {
+      const pileExecutedRows = getExecutedRows(pileRows);
+      const kingInstalledRows = kingRows.filter(isKingPostInstalled);
+      const kingPredrilledRows = kingRows.filter(isKingPostPreDrilled);
+      const hasInstalledKingPosts = kingInstalledRows.length > 0;
+      const kingCompleted = hasInstalledKingPosts ? kingInstalledRows.length : kingPredrilledRows.length;
+      const total = pileRows.length + kingRows.length;
+      const completed = pileExecutedRows.length + kingCompleted;
+      const progress = total ? (completed / total) * 100 : 0;
+      return {
+        total,
+        completed,
+        progress,
+        pileCount: pileRows.length,
+        kingPostCount: kingRows.length
+      };
+    }
+
+    function normalizeProjectLayoutTestsValue(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function getProjectLayoutTestType(row) {
+      const raw = normalizeProjectLayoutTestsValue(row?.tests);
+      if (!raw) return '';
+      if (raw.includes('sonic')) return 'sonic';
+      if (raw.includes('dynamic')) return 'dynamic';
+      return '';
+    }
+
+    function buildProjectLayoutLegend(pileRows, kingRows) {
+      let items;
+      if (pileRows.length && !kingRows.length) {
+        items = [
+          { label: 'Executed', color: '#20cf7a' },
+          { label: 'Executed Last Day', color: '#ffb347' }
+        ];
+      } else if (kingRows.length && !pileRows.length) {
+        items = [
+          { label: 'Pre-Drilled', color: '#ffb347' },
+          { label: 'Installed', color: '#20cf7a' }
+        ];
+      } else {
+        items = [
+          { label: 'Complete', color: '#20cf7a' },
+          { label: 'Recent / Ready', color: '#ffb347' },
+          { label: 'Remaining', color: '#cfd6e2' }
+        ];
+      }
+      const hasSonic = pileRows.some(row => getProjectLayoutTestType(row) === 'sonic');
+      const hasDynamic = pileRows.some(row => getProjectLayoutTestType(row) === 'dynamic');
+      if (hasSonic) items.push({ label: 'Sonic Test', color: '#2D7FF9', symbol: 'ring' });
+      if (hasDynamic) items.push({ label: 'Dynamic Test', color: '#B784D7', symbol: 'square' });
+      return items;
+    }
+
+    function buildProjectLayoutPrintRecords(pileRows, kingRows) {
+      const latestPileDateKey = getExecutedRows(pileRows)
+        .map(row => getOverviewDateKey(row))
+        .filter(Boolean)
+        .sort()
+        .pop() || '';
+
+      const pileRecords = pileRows.map(row => {
+        const point = getProjectedPilePoint(row);
+        if (!point) return null;
+        const executed = isExecutedRow(row);
+        const dateKey = executed ? getOverviewDateKey(row) : '';
+        const statusKey = executed
+          ? (dateKey && dateKey === latestPileDateKey ? 'recent' : 'complete')
+          : 'remaining';
+        return {
+          kind: 'pile',
+          x: point.x,
+          y: point.y,
+          anchorX: point.x,
+          anchorY: point.y,
+          id: normalizeText(row.id) || '-',
+          secondary: normalizeText(row.pileType),
+          statusKey,
+          testType: getProjectLayoutTestType(row)
+        };
+      }).filter(Boolean);
+
+      const kingRecords = kingRows.map(row => {
+        const segment = getProjectedKingPostSegment(row);
+        if (!segment) return null;
+        let statusKey = 'remaining';
+        if (isKingPostInstalled(row)) statusKey = 'complete';
+        else if (isKingPostPreDrilled(row)) statusKey = 'recent';
+        return {
+          kind: 'kingpost',
+          x1: segment.x1,
+          y1: segment.y1,
+          x2: segment.x2,
+          y2: segment.y2,
+          x: segment.cx,
+          y: segment.cy,
+          anchorX: segment.cx,
+          anchorY: segment.cy,
+          id: normalizeText(row.id) || '-',
+          profile: normalizeText(row.profile),
+          secondary: '',
+          statusKey
+        };
+      }).filter(Boolean);
+
+      return [...pileRecords, ...kingRecords];
+    }
+
+    function buildConvexHull(points) {
+      const clean = (points || []).filter(point => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+      if (clean.length <= 1) return clean;
+      const sorted = clean.slice().sort((a, b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      sorted.forEach(point => {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+        lower.push(point);
+      });
+      const upper = [];
+      for (let i = sorted.length - 1; i >= 0; i -= 1) {
+        const point = sorted[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+        upper.push(point);
+      }
+      lower.pop();
+      upper.pop();
+      return lower.concat(upper);
+    }
+
+    function triggerMapPrintLayout() {
+      const pileRows = getRowsForProject(selectedProject);
+      const kingRows = getKingPostRowsForProject(selectedProject);
+      const records = buildProjectLayoutPrintRecords(pileRows, kingRows);
+      if (!records.length) {
+        window.alert('No project layout data is available for the current scope.');
+        return;
+      }
+
+      const printWindow = window.open('', '_blank', 'width=1480,height=980');
+      if (!printWindow) {
+        window.alert('Unable to open the print preview window. Please allow pop-ups for this dashboard.');
+        return;
+      }
+
+      const summary = buildProjectLayoutPrintSummary(pileRows, kingRows);
+      const legend = buildProjectLayoutLegend(pileRows, kingRows);
+      const allPoints = records.flatMap(record => {
+        if (record.kind === 'kingpost') {
+          return [
+            { x: record.x1, y: record.y1 },
+            { x: record.x2, y: record.y2 },
+            { x: record.anchorX, y: record.anchorY }
+          ];
+        }
+        return [{ x: record.x, y: record.y }];
+      });
+
+      const svgWidth = 1490;
+      const svgHeight = 955;
+      const plotBox = { x: 10, y: 10, width: svgWidth - 20, height: svgHeight - 20 };
+      const projectCenter = {
+        x: allPoints.reduce((sum, point) => sum + point.x, 0) / allPoints.length,
+        y: allPoints.reduce((sum, point) => sum + point.y, 0) / allPoints.length
+      };
+
+      const rotateAroundCenter = (point, angle) => {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const dx = point.x - projectCenter.x;
+        const dy = point.y - projectCenter.y;
+        return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+      };
+
+      const fitOptions = [0, Math.PI / 2].map(angle => {
+        const rotatedPoints = allPoints.map(point => rotateAroundCenter(point, angle));
+        const minX = Math.min(...rotatedPoints.map(point => point.x));
+        const maxX = Math.max(...rotatedPoints.map(point => point.x));
+        const minY = Math.min(...rotatedPoints.map(point => point.y));
+        const maxY = Math.max(...rotatedPoints.map(point => point.y));
+        const spanX = Math.max(1, maxX - minX);
+        const spanY = Math.max(1, maxY - minY);
+        const scale = Math.min((plotBox.width - 20) / spanX, (plotBox.height - 20) / spanY);
+        return { angle, minX, maxX, minY, maxY, scale };
+      });
+
+      const bestFit = fitOptions.sort((a, b) => b.scale - a.scale)[0];
+      const projectPoint = point => {
+        const rotated = rotateAroundCenter(point, bestFit.angle);
+        const originX = plotBox.x + (plotBox.width - (bestFit.maxX - bestFit.minX) * bestFit.scale) / 2;
+        const originY = plotBox.y + (plotBox.height - (bestFit.maxY - bestFit.minY) * bestFit.scale) / 2;
+        return {
+          x: originX + (rotated.x - bestFit.minX) * bestFit.scale,
+          y: originY + (bestFit.maxY - rotated.y) * bestFit.scale
+        };
+      };
+
+      const projectedForHull = allPoints.map(projectPoint);
+      const hullPoints = buildConvexHull(projectedForHull);
+      const hullPath = hullPoints.length >= 3
+        ? `M ${hullPoints.map(point => `${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' L ')} Z`
+        : '';
+
+      const statusStyles = {
+        complete: { fill: 'rgba(32, 207, 122, 0.24)', stroke: '#21cf7a' },
+        recent: { fill: 'rgba(255, 179, 71, 0.22)', stroke: '#ffb347' },
+        remaining: { fill: 'rgba(203, 211, 224, 0.18)', stroke: '#cfd6e2' }
+      };
+
+      const layoutRecords = records.map(record => {
+        const anchor = projectPoint({ x: record.anchorX, y: record.anchorY });
+        const dxRaw = record.anchorX - projectCenter.x;
+        const dyRaw = projectCenter.y - record.anchorY;
+        const distance = Math.hypot(dxRaw, dyRaw) || 1;
+        return {
+          ...record,
+          screen: record.kind === 'kingpost'
+            ? {
+                x1: projectPoint({ x: record.x1, y: record.y1 }).x,
+                y1: projectPoint({ x: record.x1, y: record.y1 }).y,
+                x2: projectPoint({ x: record.x2, y: record.y2 }).x,
+                y2: projectPoint({ x: record.x2, y: record.y2 }).y
+              }
+            : null,
+          anchor,
+          dirX: dxRaw / distance,
+          dirY: dyRaw / distance
+        };
+      });
+
+      const shapeMarkup = layoutRecords.map(record => {
+        const style = statusStyles[record.statusKey] || statusStyles.remaining;
+        if (record.kind === 'kingpost') {
+          const beam = record.screen;
+          const profile = parseKingPostProfileForPrint(record.profile);
+          const angleDeg = (Math.atan2(beam.y2 - beam.y1, beam.x2 - beam.x1) * 180 / Math.PI) - 90;
+          const ubPrintScale = 0.62;
+          const rawWidthPx = Math.min(9.2, Math.max(4.4, profile.widthM * bestFit.scale * 1.12));
+          const rawDepthPx = Math.min(16.8, Math.max(8.4, profile.depthM * bestFit.scale * 1.12));
+          const widthPx = rawWidthPx * ubPrintScale;
+          const depthPx = rawDepthPx * ubPrintScale;
+          const flangePx = Math.min(2.5, Math.max(1.0, depthPx * 0.14)) * ubPrintScale;
+          const webPx = Math.min(1.85, Math.max(0.82, widthPx * 0.19)) * ubPrintScale;
+          const path = buildUbSectionLocalPath(widthPx, depthPx, flangePx, webPx);
+          return `<g transform="translate(${record.anchor.x.toFixed(2)} ${record.anchor.y.toFixed(2)}) rotate(${angleDeg.toFixed(3)})"><path d="${path}" fill="${style.fill}" stroke="${style.stroke}" stroke-width="0.9" opacity="0.96" /></g>`;
+        }
+        return `<circle cx="${record.anchor.x.toFixed(2)}" cy="${record.anchor.y.toFixed(2)}" r="7.0" fill="${style.fill}" stroke="${style.stroke}" stroke-width="1.05" />`;
+      }).join('');
+
+      const testMarkup = layoutRecords.map(record => {
+        if (record.kind !== 'pile' || !record.testType) return '';
+        if (record.testType === 'sonic') {
+          return `<circle cx="${record.anchor.x.toFixed(2)}" cy="${record.anchor.y.toFixed(2)}" r="11.2" fill="none" stroke="#2D7FF9" stroke-width="2.1" opacity="0.96" />`;
+        }
+        if (record.testType === 'dynamic') {
+          return `<rect x="${(record.anchor.x - 9.4).toFixed(2)}" y="${(record.anchor.y - 9.4).toFixed(2)}" width="18.8" height="18.8" rx="2.4" fill="none" stroke="#B784D7" stroke-width="2.1" opacity="0.96" />`;
+        }
+        return '';
+      }).join('');
+
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const labelMarkup = layoutRecords.map(record => {
+        const secondary = record.secondary;
+        const isKingPost = record.kind === 'kingpost';
+        if (isKingPost && record.screen) {
+          const dx = record.screen.x2 - record.screen.x1;
+          const dy = record.screen.y2 - record.screen.y1;
+          const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+          const labelX = clamp(record.screen.x2, plotBox.x + 6, plotBox.x + plotBox.width - 6);
+          const labelY = clamp(record.screen.y2, plotBox.y + 6, plotBox.y + plotBox.height - 6);
+          return `<g transform="translate(${labelX.toFixed(2)} ${labelY.toFixed(2)}) rotate(${angleDeg.toFixed(3)})"><text x="1.2" y="0" text-anchor="start" dominant-baseline="middle" font-size="7.2" font-weight="600" fill="#16202c" stroke="rgba(255,255,255,0.94)" stroke-width="0.9" paint-order="stroke">${escapeHtml(record.id)}</text></g>`;
+        }
+        const textX = clamp(record.anchor.x + (record.dirX * (isKingPost ? 0.8 : 2.4)), plotBox.x + 14, plotBox.x + plotBox.width - 14);
+        const topY = clamp(record.anchor.y - (isKingPost ? 12.8 : 8.0), plotBox.y + 10, plotBox.y + plotBox.height - 14);
+        const lowerY = clamp(record.anchor.y + (isKingPost ? 22.2 : 10.2), plotBox.y + 18, plotBox.y + plotBox.height - 6);
+        const idFontSize = isKingPost ? 7.2 : 8.6;
+        const typeFontSize = isKingPost ? 6.0 : 6.7;
+        const idStroke = isKingPost ? 0.9 : 1.2;
+        const typeStroke = isKingPost ? 0.7 : 0.95;
+        return `<text x="${textX.toFixed(2)}" y="${topY.toFixed(2)}" text-anchor="middle" font-size="${idFontSize}" font-weight="600" fill="#16202c" stroke="rgba(255,255,255,0.94)" stroke-width="${idStroke}" paint-order="stroke">${escapeHtml(record.id)}</text>${secondary ? `<text x="${textX.toFixed(2)}" y="${lowerY.toFixed(2)}" text-anchor="middle" font-size="${typeFontSize}" font-weight="600" fill="#4b74bf" stroke="rgba(255,255,255,0.94)" stroke-width="${typeStroke}" paint-order="stroke">${escapeHtml(secondary)}</text>` : ''}`;
+      }).join('');
+
+      const svgMarkup = `<svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Project layout"><defs><linearGradient id="layoutPanelFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbfdff" /><stop offset="100%" stop-color="#f4f7fb" /></linearGradient></defs><rect x="${plotBox.x}" y="${plotBox.y}" width="${plotBox.width}" height="${plotBox.height}" rx="20" fill="url(#layoutPanelFill)" stroke="rgba(19,28,39,0.08)" stroke-width="1.35" />${hullPath ? `<path d="${hullPath}" fill="rgba(31,111,255,0.03)" stroke="rgba(31,111,255,0.28)" stroke-width="2" stroke-dasharray="8 8" />` : ''}${shapeMarkup}${testMarkup}${labelMarkup}</svg>`;
+
+      const completionLabel = summary.pileCount && !summary.kingPostCount ? 'Piles' : (summary.kingPostCount && !summary.pileCount ? 'KingPosts' : 'Elements');
+      const progressLine = `${summary.completed}/${summary.total} ${completionLabel} • ${formatNumberOneDecimal(summary.progress)}% Complete`;
+      const legendMarkup = legend.map(item => item.symbol === 'ring'
+        ? `<div class="sheet-legend-item"><span class="sheet-legend-swatch ring" style="--legend-color:${item.color};"></span><span>${escapeHtml(item.label)}</span></div>`
+        : item.symbol === 'square'
+          ? `<div class="sheet-legend-item"><span class="sheet-legend-swatch square" style="--legend-color:${item.color};"></span><span>${escapeHtml(item.label)}</span></div>`
+          : `<div class="sheet-legend-item"><span class="sheet-legend-dot" style="background:${item.color};"></span><span>${escapeHtml(item.label)}</span></div>`).join('');
+
+      const apfcLogoUrl = new URL('assets/APFC_Logo.png', window.location.href).href;
+      const binghattiLogoUrl = new URL('assets/binghatti_logo.jpg', window.location.href).href;
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>Project Progress Layout</title><meta name="viewport" content="width=device-width, initial-scale=1" /><style>:root{--ink:#16202c;--muted:#73839a;--line:rgba(22,32,44,.10);--panel:#ffffff;--panel-soft:#f6f8fb;--shadow:0 18px 44px rgba(8,14,22,.10);--green:#20cf7a;--amber:#ffb347;--grey:#cfd6e2}*{box-sizing:border-box}@page{size:A4 landscape;margin:6mm}html,body{margin:0;padding:0;background:#eef2f7;color:var(--ink);font-family:"Segoe UI",Arial,sans-serif}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.sheet{width:100%;margin:0 auto;height:198mm;padding:3mm 3mm 2mm;background:#fff;display:flex;flex-direction:column;gap:1.25mm;overflow:hidden}.sheet-header{display:flex;flex-direction:column;gap:1px;padding:0 1px 2px;flex:0 0 auto;border-bottom:1px solid rgba(18,32,51,.10)}.sheet-brandrow{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%}.sheet-head-main{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:1px;min-width:0;flex:1 1 auto;padding:0 18px}.sheet-brandrow img{display:block;object-fit:contain;flex:0 0 auto}.sheet-brandrow .sheet-brand-apfc{height:30px;width:auto}.sheet-brandrow .sheet-brand-binghatti{height:40px;width:auto;object-position:center;clip-path:inset(7px 0 7px 0)}.sheet-title{font-size:11px;font-weight:800;letter-spacing:-.02em;margin:0;line-height:1.08;color:#122033;text-wrap:balance}.sheet-progressline{color:#6f82a0;font-size:8.6px;font-weight:700;letter-spacing:.025em}.sheet-legend{display:inline-flex;align-items:center;gap:7px;padding:3px 7px;border:1px solid rgba(22,32,44,.08);border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 6px 18px rgba(8,14,22,.06)}.sheet-legend-item{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:8.5px;color:#42536b}.sheet-legend-dot{width:8px;height:8px;border-radius:999px;flex:0 0 8px;box-shadow:0 0 0 2px rgba(22,32,44,.04)}.sheet-legend-swatch{width:14px;height:14px;position:relative;flex:0 0 14px;display:inline-block}.sheet-legend-swatch.ring::before{content:"";position:absolute;inset:1px;border:2px solid var(--legend-color);border-radius:999px}.sheet-legend-swatch.square::before{content:"";position:absolute;inset:1px;border:2px solid var(--legend-color);border-radius:2px}.sheet-stamp{color:#6d7f96;font-size:9px;font-weight:600;white-space:nowrap}.sheet-body{flex:1 1 auto;min-height:0;display:flex}.layout-card{border:0;border-radius:0;background:transparent;box-shadow:none;overflow:hidden;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;padding:0}.layout-card svg{display:block;width:100%;height:100%;flex:1 1 auto}.sheet-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:1px 1px 0;flex:0 0 auto;border-top:1px solid rgba(18,32,51,.08)}@media print{html,body{background:#ffffff}.sheet{padding:0;width:auto}}</style></head><body onload="setTimeout(function(){ window.print(); }, 280)"><div class="sheet"><div class="sheet-header"><div class="sheet-brandrow"><img class="sheet-brand-apfc" src="${apfcLogoUrl}" alt="APFC logo" /><div class="sheet-head-main"><h1 class="sheet-title">${escapeHtml(normalizeText(selectedProject || DEFAULT_PROJECT))} - Project Progress Layout</h1><div class="sheet-progressline">${escapeHtml(progressLine)}</div></div><img class="sheet-brand-binghatti" src="${binghattiLogoUrl}" alt="Binghatti logo" /></div></div><div class="sheet-body"><main class="layout-card">${svgMarkup}</main></div><div class="sheet-footer"><div class="sheet-stamp">Generated ${escapeHtml(getPrintTimestampLabel())}</div><div class="sheet-legend">${legendMarkup}</div></div></div></body></html>`;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
     }
 
     function bindMapFrameSync() {
@@ -1075,6 +1464,10 @@
           drillingDuration: Number(row.asbuilt_DurationDrilling ?? row.asbuilt_durationdrilling ?? 0) || 0,
           rig1: normalizeText(row.asbuilt_Rig1 || row.asbuilt_rig1),
           rig1Depth: Number(row.asbuilt_Rig1Depth ?? row.asbuilt_rig1depth ?? 0) || 0,
+          design_x: Number(row.design_x ?? row.design_X),
+          design_y: Number(row.design_y ?? row.design_Y),
+          design_back_x: Number(row.design_back_x ?? row.design_back_X ?? row.design_Back_X ?? row.design_BackX ?? row.designBackX),
+          design_back_y: Number(row.design_back_y ?? row.design_back_Y ?? row.design_Back_Y ?? row.design_BackY ?? row.designBackY),
           designDepthDrilling: Number(row.design_DepthDrilling ?? row.design_depthdrilling ?? 0) || 0,
           asbuiltDepth: Number(row.asbuilt_depth ?? row.asbuilt_DepthDrillingFromPlatform ?? 0) || 0,
           section: normalizeText(row.section || row.Section),
@@ -1754,6 +2147,22 @@
           wrap.scrollLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
         });
       }
+      syncSidebarLayoutNav();
+    }
+
+    function syncSidebarLayoutNav() {
+      els.navStacks.forEach(stack => {
+        const isActive = stack.dataset.navStack === activePage;
+        stack.classList.toggle('nav-stack-active', isActive);
+      });
+      els.navSubButtons.forEach(btn => {
+        const execLayout = btn.dataset.executiveLayoutNav || '';
+        const companyLayout = btn.dataset.companyLayoutNav || '';
+        const isActive =
+          (btn.dataset.page === 'executive' && activePage === 'executive' && execLayout === executiveOverviewLayout) ||
+          (btn.dataset.page === 'resources' && activePage === 'resources' && companyLayout === companyAnalyticsLayoutMode);
+        btn.classList.toggle('active', isActive);
+      });
     }
 
     function getRecentPileLmTotal(project = 'All Projects', calendarDayCount = 7) {
@@ -1777,7 +2186,9 @@
 
     function getExecutiveLatestManpowerSummary(project = 'All Projects') {
       const rows = getPortfolioManpowerRows(project);
-      const latest = rows[0] || null;
+      const latest = rows
+        .slice()
+        .sort((a, b) => normalizeDateString(b?.date).localeCompare(normalizeDateString(a?.date)))[0] || null;
       if (!latest) {
         return { total: 0, leadership: 0, operators: 0, support: 0, date: '' };
       }
@@ -1785,6 +2196,16 @@
       const operators = (latest.op || 0) + (latest.vb || 0) + (latest.rig || 0);
       const support = (latest.we || 0) + (latest.me || 0) + (latest.hl || 0);
       return { total: latest.total || 0, leadership, operators, support, date: latest.date || '' };
+    }
+
+    function getExecutiveCompanyManpowerTotal(project = 'All Projects') {
+      const rawProject = normalizeText(project || 'All Projects');
+      const targetProjectToken = isAllProjectsValue(rawProject) ? '' : getCompanyProjectToken(rawProject);
+      return companyManpowerRows
+        .map(sanitizeCompanyEmployee)
+        .filter(employee => employee.employeeName && employee.designation)
+        .filter(employee => !targetProjectToken || getCompanyProjectToken(employee.projectRaw || employee.project) === targetProjectToken)
+        .length;
     }
 
     function getExecutiveEquipmentSummary(project = 'All Projects') {
@@ -1880,22 +2301,357 @@
         pileStats,
         kingStats,
         manpower,
+        manpowerCompanyTotal: getExecutiveCompanyManpowerTotal(project),
         equipment,
         activeRigs,
         costPerLm: getExecutivePileCostPerLm(project)
       };
     }
 
+    function getExecutiveMatrixTooltip() {
+      let tooltip = document.getElementById('executiveMatrixTooltip');
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'executiveMatrixTooltip';
+        tooltip.className = 'chart-tooltip executive-matrix-tooltip';
+        tooltip.style.position = 'fixed';
+        document.body.appendChild(tooltip);
+      }
+      return tooltip;
+    }
+
+    function hideExecutiveMatrixTooltip() {
+      const tooltip = document.getElementById('executiveMatrixTooltip');
+      if (!tooltip) return;
+      tooltip.classList.remove('visible');
+      tooltip.innerHTML = '';
+      tooltip.dataset.project = '';
+      tooltip.dataset.column = '';
+      tooltip.style.left = '';
+      tooltip.style.top = '';
+    }
+
+    function placeFixedTooltipNearCursor(tooltipEl, clientX, clientY) {
+      if (!tooltipEl) return;
+      const gap = 14;
+      const rect = tooltipEl.getBoundingClientRect();
+      const tooltipWidth = rect.width || 280;
+      const tooltipHeight = rect.height || 180;
+      let left = clientX + gap;
+      let top = clientY + gap;
+      if (left + tooltipWidth > window.innerWidth - 8) {
+        left = clientX - tooltipWidth - gap;
+      }
+      if (top + tooltipHeight > window.innerHeight - 8) {
+        top = clientY - tooltipHeight - gap;
+      }
+      left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8));
+      top = Math.max(8, Math.min(top, window.innerHeight - tooltipHeight - 8));
+      tooltipEl.style.left = `${left}px`;
+      tooltipEl.style.top = `${top}px`;
+    }
+
+    function buildExecutiveMiniBarSvg(points, color = '#52e0a5') {
+      const safePoints = Array.isArray(points) ? points.slice(-7) : [];
+      const width = 208;
+      const height = 72;
+      const padX = 8;
+      const chartTop = 14;
+      const chartBottom = 50;
+      const chartHeight = chartBottom - chartTop;
+      const slotWidth = safePoints.length ? (width - (padX * 2)) / safePoints.length : 0;
+      const barWidth = Math.max(10, slotWidth - 10);
+      const maxValue = Math.max(1, ...safePoints.map(point => Number(point.value) || 0));
+      const firstLabel = safePoints[0]?.date ? formatDateLabel(safePoints[0].date).replace(/\s/g, '') : '';
+      const lastLabel = safePoints[safePoints.length - 1]?.date ? formatDateLabel(safePoints[safePoints.length - 1].date).replace(/\s/g, '') : '';
+      const bars = safePoints.map((point, idx) => {
+        const value = Number(point.value) || 0;
+        const x = padX + (idx * slotWidth) + ((slotWidth - barWidth) / 2);
+        const h = maxValue > 0 ? (value / maxValue) * chartHeight : 0;
+        const y = chartBottom - h;
+        const labelY = Math.max(9, y - 5);
+        return `
+          <line x1="${(x + barWidth / 2).toFixed(1)}" y1="${(chartBottom + 3).toFixed(1)}" x2="${(x + barWidth / 2).toFixed(1)}" y2="${(chartBottom + 8).toFixed(1)}" stroke="rgba(17,32,51,0.16)" stroke-width="1"></line>
+          <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(2, h).toFixed(1)}" rx="5" fill="${color}" fill-opacity="${value > 0 ? '0.88' : '0.16'}"></rect>
+          <text x="${(x + barWidth / 2).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" fill="#18304d" font-size="7.5" font-weight="800">${value > 0 ? escapeHtml(String(Math.round(value * 10) / 10).replace(/\.0$/, '')) : ''}</text>
+        `;
+      }).join('');
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="executive-tooltip-mini-svg" aria-hidden="true">
+          <line x1="${padX}" y1="${chartBottom}" x2="${width - padX}" y2="${chartBottom}" stroke="rgba(17,32,51,0.1)" stroke-width="1"></line>
+          ${bars}
+          ${firstLabel ? `<text x="${padX}" y="${(chartBottom + 18).toFixed(1)}" text-anchor="start" fill="rgba(17,32,51,0.44)" font-size="8" font-weight="700">${escapeHtml(firstLabel)}</text>` : ''}
+          ${lastLabel ? `<text x="${(width - padX).toFixed(1)}" y="${(chartBottom + 18).toFixed(1)}" text-anchor="end" fill="rgba(17,32,51,0.44)" font-size="8" font-weight="700">${escapeHtml(lastLabel)}</text>` : ''}
+        </svg>
+      `;
+    }
+
+    function buildExecutiveEtaTrendSvg(snapshot) {
+      const pileRows = getPortfolioPileRows(snapshot.project);
+      const kingRows = getPortfolioKingPostRows(snapshot.project);
+      const pileDaily = aggregateDailyMetrics(pileRows, 'piles', 'day');
+      const kingMetric = (snapshot.kingStats?.completed || 0) > 0 ? 'installed' : 'predrilled';
+      const kingDaily = aggregateKingPostMetrics(kingRows, kingMetric, 'day');
+      const mergedMap = new Map();
+
+      pileDaily.forEach(point => {
+        if (!point?.date) return;
+        mergedMap.set(point.date, (mergedMap.get(point.date) || 0) + (Number(point.executedCount) || 0));
+      });
+      kingDaily.forEach(point => {
+        if (!point?.date) return;
+        mergedMap.set(point.date, (mergedMap.get(point.date) || 0) + (Number(point.executedCount) || 0));
+      });
+
+      const allKeys = Array.from(mergedMap.keys()).sort();
+      const startKey = allKeys[0] || todayKey();
+      const etaCandidates = [snapshot.pileStats?.etaDate, snapshot.kingStats?.etaDate]
+        .filter(Boolean)
+        .map(value => new Date(value))
+        .filter(value => !Number.isNaN(value.getTime()));
+      const endDate = etaCandidates.length
+        ? new Date(Math.max(...etaCandidates.map(value => value.getTime())))
+        : new Date(`${todayKey()}T00:00:00Z`);
+      if (Number.isNaN(endDate.getTime())) return '';
+
+      const points = [];
+      let cumulative = 0;
+      let cursor = new Date(`${startKey}T00:00:00Z`);
+      const today = new Date(`${todayKey()}T00:00:00Z`);
+      const total = Math.max(1, (snapshot.pileStats?.total || 0) + (snapshot.kingStats?.total || 0));
+      while (cursor <= endDate) {
+        const key = cursor.toISOString().slice(0, 10);
+        if (cursor <= today) cumulative += mergedMap.get(key) || 0;
+        points.push({ date: key, value: Math.min(total, cumulative) });
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      if (!points.length) return '';
+
+      const todayValue = Math.min(total, (snapshot.pileStats?.completed || 0) + (((snapshot.kingStats?.completed || 0) > 0 ? snapshot.kingStats?.completed : snapshot.kingStats?.predrilled) || 0));
+      const futureStartIndex = points.findIndex(point => point.date >= todayKey());
+      const currentIndex = futureStartIndex >= 0 ? futureStartIndex : points.length - 1;
+      const remainingSteps = Math.max(1, points.length - 1 - currentIndex);
+      for (let i = currentIndex; i < points.length; i += 1) {
+        const step = i - currentIndex;
+        const progress = remainingSteps > 0 ? (step / remainingSteps) : 1;
+        points[i].value = Math.round((todayValue + ((total - todayValue) * progress)) * 10) / 10;
+      }
+
+      const width = 216;
+      const height = 72;
+      const pad = { top: 8, right: 6, bottom: 14, left: 6 };
+      const chartWidth = width - pad.left - pad.right;
+      const chartHeight = height - pad.top - pad.bottom;
+      const maxValue = Math.max(1, ...points.map(point => Number(point.value) || 0));
+      const xAt = idx => pad.left + ((chartWidth / Math.max(1, points.length - 1)) * idx);
+      const yAt = value => pad.top + chartHeight - ((value / maxValue) * chartHeight);
+
+      const actualPoints = [];
+      const forecastPoints = [];
+      points.forEach((point, idx) => {
+        const pair = `${xAt(idx).toFixed(2)},${yAt(point.value).toFixed(2)}`;
+        if (point.date <= todayKey()) actualPoints.push(pair);
+        if (point.date >= todayKey()) forecastPoints.push(pair);
+      });
+      if (actualPoints.length && forecastPoints.length && actualPoints[actualPoints.length - 1] !== forecastPoints[0]) {
+        forecastPoints.unshift(actualPoints[actualPoints.length - 1]);
+      }
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="executive-tooltip-mini-svg" aria-hidden="true">
+          <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}" stroke="rgba(255,255,255,0.08)" stroke-width="1"></line>
+          <polyline fill="none" stroke="rgba(82,224,165,0.95)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${actualPoints.join(' ')}"></polyline>
+          <polyline fill="none" stroke="rgba(163,174,192,0.92)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${forecastPoints.join(' ')}"></polyline>
+        </svg>
+      `;
+    }
+
+    function getExecutiveYesterdayDetails(snapshot) {
+      const dayKey = previousDayKey();
+      const pileRows = getPortfolioPileRows(snapshot.project)
+        .filter(row => getOverviewDateKey(row) === dayKey)
+        .map(row => ({
+          id: normalizeText(row.id) || '-',
+          depth: Number(row.asbuilt_depth) || Number(row.design_depth) || 0
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+
+      const kingMetric = (snapshot.kingStats?.yesterdayInstalled || 0) > 0 ? 'installed' : 'predrilled';
+      const kingRows = getPortfolioKingPostRows(snapshot.project)
+        .filter(row => getKingPostMetricDateKey(row, kingMetric) === dayKey && isKingPostMetricRow(row, kingMetric))
+        .map(row => ({
+          id: normalizeText(row.id) || '-',
+          depth: Number(row.asbuiltDepth) || Number(row.designDepthDrilling) || 0
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+
+      return { pileRows, kingRows };
+    }
+
+    function getExecutiveRigRegistryDetails(project) {
+      const targetProjectToken = getCompanyProjectToken(project);
+      const rigs = equipmentRegistryRows
+        .map(sanitizeEquipmentRegistryRow)
+        .filter(item => normalizeText(item.type).toLowerCase() === 'rig')
+        .filter(item => normalizeText(item.status).toLowerCase() === 'active')
+        .filter(item => getCompanyProjectToken(item.projectRaw || item.project) === targetProjectToken);
+      return {
+        owned: rigs.filter(item => normalizeText(item.contractor).toLowerCase() === 'apfc').map(item => item.label).filter(Boolean),
+        rented: rigs.filter(item => normalizeText(item.contractor).toLowerCase() === 'rental').map(item => item.label).filter(Boolean)
+      };
+    }
+
+    function buildExecutiveMatrixTooltipHtml(snapshot, column) {
+      if (!snapshot) return '';
+
+      if (column === 'progress') {
+        const sections = [];
+        if ((snapshot.pileStats?.total || 0) > 0) {
+          const pileTrend = aggregateDailyMetrics(getPortfolioPileRows(snapshot.project), 'piles', 'day').slice(-7);
+          sections.push(`
+            <div class="executive-tooltip-section">
+              <div class="executive-tooltip-section-title executive-tooltip-section-title--piles">Bored Piles · Last 7 Days</div>
+              ${buildExecutiveMiniBarSvg(pileTrend.map(point => ({ date: point.date, value: point.executedCount })), '#52e0a5')}
+            </div>
+          `);
+        }
+        if ((snapshot.kingStats?.total || 0) > 0) {
+          const kingMetric = (snapshot.kingStats?.completed || 0) > 0 ? 'installed' : 'predrilled';
+          const kingLabel = kingMetric === 'installed' ? 'Installed' : 'Pre-Drilled';
+          const kingTrend = aggregateKingPostMetrics(getPortfolioKingPostRows(snapshot.project), kingMetric, 'day').slice(-7);
+          sections.push(`
+            <div class="executive-tooltip-section">
+              <div class="executive-tooltip-section-title executive-tooltip-section-title--king">KingPosts · ${kingLabel} · Last 7 Days</div>
+              ${buildExecutiveMiniBarSvg(kingTrend.map(point => ({ date: point.date, value: point.executedCount })), '#5ea8ff')}
+            </div>
+          `);
+        }
+        return `<div class="tooltip-title">${escapeHtml(snapshot.project)} · Daily Trend</div>${sections.join('')}`;
+      }
+
+      if (column === 'yesterday') {
+        const { pileRows, kingRows } = getExecutiveYesterdayDetails(snapshot);
+        const listHtml = (items, emptyLabel) => {
+          if (!items.length) {
+            return `<div class="tooltip-row"><span>${escapeHtml(emptyLabel)}</span><strong>-</strong></div>`;
+          }
+          return `<div class="tooltip-list">${items.slice(0, 10).map(item => `<div class="tooltip-list-item"><span>${escapeHtml(item.id)}</span><span>${Number(item.depth) > 0 ? `${Number(item.depth).toFixed(1)} m` : '-'}</span></div>`).join('')}${items.length > 10 ? `<div class="tooltip-row"><span>More</span><strong>+${items.length - 10}</strong></div>` : ''}</div>`;
+        };
+        return `
+          <div class="tooltip-title">${escapeHtml(snapshot.project)} · Yesterday Output</div>
+          ${(snapshot.pileStats?.total || 0) > 0 ? `<div class="executive-tooltip-section"><div class="executive-tooltip-section-title executive-tooltip-section-title--piles">Bored Piles · Element ID / Depth</div>${listHtml(pileRows, 'No pile activity')}</div>` : ''}
+          ${(snapshot.kingStats?.total || 0) > 0 ? `<div class="executive-tooltip-section"><div class="executive-tooltip-section-title executive-tooltip-section-title--king">KingPosts · Element ID / Depth</div>${listHtml(kingRows, 'No kingpost activity')}</div>` : ''}
+        `;
+      }
+
+      if (column === 'eta') {
+        const pileEta = snapshot.pileStats?.etaDate ? formatDateFullLabel(snapshot.pileStats.etaDate) : '-';
+        const kingEta = snapshot.kingStats?.etaDate ? formatDateFullLabel(snapshot.kingStats.etaDate) : '-';
+        const etaText = (snapshot.kingStats?.total || 0) > 0 && (snapshot.pileStats?.total || 0) > 0
+          ? `${escapeHtml(pileEta)} / ${escapeHtml(kingEta)}`
+          : escapeHtml((snapshot.pileStats?.total || 0) > 0 ? pileEta : kingEta);
+        return `
+          <div class="tooltip-title">${escapeHtml(snapshot.project)} · Cumulative Outlook</div>
+          <div class="tooltip-row"><span>Project ETA</span><strong>${etaText}</strong></div>
+          <div class="executive-tooltip-section">
+            ${buildExecutiveEtaTrendSvg(snapshot)}
+            <div class="executive-tooltip-legend">
+              <span><i class="executive-tooltip-dot executive-tooltip-dot--actual"></i>Actual</span>
+              <span><i class="executive-tooltip-dot executive-tooltip-dot--forecast"></i>Forecast</span>
+            </div>
+          </div>
+        `;
+      }
+
+      if (column === 'rigs') {
+        const rigs = getExecutiveRigRegistryDetails(snapshot.project);
+        const rigList = (items, cls, emptyLabel) => {
+          if (!items.length) return `<div class="tooltip-row"><span>${escapeHtml(emptyLabel)}</span><strong>-</strong></div>`;
+          return `<div class="executive-tooltip-chip-row">${items.map(item => `<span class="executive-tooltip-chip ${cls}">${escapeHtml(item)}</span>`).join('')}</div>`;
+        };
+        return `
+          <div class="tooltip-title">${escapeHtml(snapshot.project)} · Active Rigs</div>
+          <div class="executive-tooltip-section">
+            <div class="executive-tooltip-section-title executive-tooltip-section-title--piles">Owned</div>
+            ${rigList(rigs.owned, 'executive-tooltip-chip--owned', 'No owned rigs')}
+          </div>
+          <div class="executive-tooltip-section">
+            <div class="executive-tooltip-section-title executive-tooltip-section-title--king">Rented</div>
+            ${rigList(rigs.rented, 'executive-tooltip-chip--rented', 'No rented rigs')}
+          </div>
+        `;
+      }
+
+      return '';
+    }
+
+    function bindExecutiveMatrixTooltips() {
+      const body = els.executiveMatrixBody;
+      if (!body || body.dataset.tooltipBound === 'true') return;
+
+      body.addEventListener('mousemove', evt => {
+        const cell = evt.target.closest('[data-exec-tooltip]');
+        if (!cell || !body.contains(cell)) {
+          hideExecutiveMatrixTooltip();
+          return;
+        }
+        const project = normalizeText(cell.dataset.execProject);
+        const column = normalizeText(cell.dataset.execTooltip);
+        const snapshot = executiveMatrixSnapshots.get(project);
+        if (!snapshot || !column) {
+          hideExecutiveMatrixTooltip();
+          return;
+        }
+        const tooltip = getExecutiveMatrixTooltip();
+        if (tooltip.dataset.project !== project || tooltip.dataset.column !== column) {
+          const html = buildExecutiveMatrixTooltipHtml(snapshot, column);
+          if (!html) {
+            hideExecutiveMatrixTooltip();
+            return;
+          }
+          tooltip.innerHTML = html;
+          tooltip.dataset.project = project;
+          tooltip.dataset.column = column;
+        }
+        tooltip.classList.add('visible');
+        placeFixedTooltipNearCursor(tooltip, evt.clientX, evt.clientY);
+      });
+
+      body.addEventListener('mouseleave', () => {
+        hideExecutiveMatrixTooltip();
+      });
+
+      body.dataset.tooltipBound = 'true';
+    }
+
     function renderExecutiveMatrix(snapshots) {
       if (!els.executiveMatrixBody) return;
+      executiveMatrixSnapshots = new Map(snapshots.map(snapshot => [snapshot.project, snapshot]));
 
-      function activityBlock(type, heading, content) {
+      function activityBlock(type, content) {
         return `
           <div class="exec-act-block exec-act-block--${type}">
-            <div class="exec-act-head">
-              <div class="exec-act-title exec-act-title--${type}">${heading}</div>
-            </div>
             ${content}
+          </div>
+        `;
+      }
+
+      function renderHalfGauge(type, pct) {
+        const clamped = Math.min(100, Math.max(0, pct));
+        const r = 28;
+        const c = Math.PI * r;
+        const dash = (clamped / 100) * c;
+        const colorClass = type === 'king' ? 'exec-progress-arc--king' : 'exec-progress-arc--piles';
+        return `
+          <div class="exec-progress-gauge exec-progress-gauge--${type}" aria-hidden="true">
+            <svg viewBox="0 0 72 44" class="exec-progress-gauge-svg">
+              <path class="exec-progress-arc-track" d="M 8 36 A 28 28 0 0 1 64 36"></path>
+              <path class="exec-progress-arc ${colorClass}" d="M 8 36 A 28 28 0 0 1 64 36" style="stroke-dasharray:${dash.toFixed(2)} ${c.toFixed(2)};"></path>
+            </svg>
+            <div class="exec-progress-gauge-core">
+              <span class="exec-progress-gauge-value">${clamped.toFixed(1)}%</span>
+            </div>
           </div>
         `;
       }
@@ -1908,12 +2664,16 @@
         let progressCell = '';
         if (hasPiles) {
           const pct = Math.min(100, Math.max(0, snapshot.pileStats.progress));
-          progressCell += activityBlock('piles', 'Bored Piles', `
-            <div class="exec-progress-line">
-              <div class="exec-progress-nums"><span class="exec-executed">${snapshot.pileStats.completed}</span><span class="exec-slash">/</span><span class="exec-total">${snapshot.pileStats.total}</span></div>
-              <span class="exec-progress-pct">${pct.toFixed(1)}%</span>
+          progressCell += activityBlock('piles', `
+            <div class="exec-progress-gauge-row">
+              ${renderHalfGauge('piles', pct)}
+              <div class="exec-progress-metrics">
+                <div class="exec-progress-line">
+                  <div class="exec-progress-nums"><span class="exec-executed">${snapshot.pileStats.completed}</span><span class="exec-slash">/</span><span class="exec-total">${snapshot.pileStats.total}</span></div>
+                </div>
+                <div class="exec-progress-caption">Executed / Total</div>
+              </div>
             </div>
-            <div class="exec-progress-track"><div class="exec-progress-fill exec-progress-fill--piles" style="width:${pct}%"></div></div>
           `);
         }
         if (hasKing) {
@@ -1921,13 +2681,17 @@
           const progressLabel = snapshot.kingStats.completed > 0 ? 'Installed' : 'Pre-Drilled';
           const displayPct = snapshot.kingStats.total > 0 ? (displayCompleted / snapshot.kingStats.total) * 100 : 0;
           const pct = Math.min(100, Math.max(0, displayPct));
-          progressCell += activityBlock('king', 'KingPosts', `
+          progressCell += activityBlock('king', `
             <div class="exec-kv" style="margin-bottom:8px;"><span class="exec-kv-unit">${progressLabel}</span></div>
-            <div class="exec-progress-line">
-              <div class="exec-progress-nums"><span class="exec-executed">${displayCompleted}</span><span class="exec-slash">/</span><span class="exec-total">${snapshot.kingStats.total}</span></div>
-              <span class="exec-progress-pct">${pct.toFixed(1)}%</span>
+            <div class="exec-progress-gauge-row">
+              ${renderHalfGauge('king', pct)}
+              <div class="exec-progress-metrics">
+                <div class="exec-progress-line">
+                  <div class="exec-progress-nums"><span class="exec-executed">${displayCompleted}</span><span class="exec-slash">/</span><span class="exec-total">${snapshot.kingStats.total}</span></div>
+                </div>
+                <div class="exec-progress-caption">${progressLabel} / Total</div>
+              </div>
             </div>
-            <div class="exec-progress-track"><div class="exec-progress-fill exec-progress-fill--king" style="width:${pct}%"></div></div>
           `);
         }
 
@@ -1936,24 +2700,24 @@
         if (hasPiles) {
           const cnt = snapshot.pileStats.yesterdayExecuted;
           const lm = snapshot.pileStats.yesterdayLm;
-          yesterdayCell += activityBlock('piles', 'Bored Piles', `<div class="exec-kv"><span class="exec-kv-num">${cnt}</span><span class="exec-kv-unit">Pile</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${lm > 0 ? lm.toFixed(1) : '-'}</span><span class="exec-kv-unit">Lm</span></div>`);
+          yesterdayCell += activityBlock('piles', `<div class="exec-kv"><span class="exec-kv-num">${cnt}</span><span class="exec-kv-unit">Pile</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${lm > 0 ? lm.toFixed(1) : '-'}</span><span class="exec-kv-unit">Lm</span></div>`);
         }
         if (hasKing) {
           const cnt = snapshot.kingStats.yesterdayInstalled > 0
             ? snapshot.kingStats.yesterdayInstalled
             : snapshot.kingStats.yesterdayPredrilled;
           const lm = snapshot.kingStats.yesterdayKpLm;
-          yesterdayCell += activityBlock('king', 'KingPosts', `<div class="exec-kv"><span class="exec-kv-num">${cnt}</span><span class="exec-kv-unit">Kingpost</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${lm > 0 ? lm.toFixed(1) : '-'}</span><span class="exec-kv-unit">Lm</span></div>`);
+          yesterdayCell += activityBlock('king', `<div class="exec-kv"><span class="exec-kv-num">${cnt}</span><span class="exec-kv-unit">Kingpost</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${lm > 0 ? lm.toFixed(1) : '-'}</span><span class="exec-kv-unit">Lm</span></div>`);
         }
 
         // Rolling AVG 7CD column
         let avgCell = '';
         if (hasPiles) {
-          avgCell += activityBlock('piles', 'Bored Piles', `<div class="exec-kv"><span class="exec-kv-num">${snapshot.pileStats.avgPiles.toFixed(1)}</span><span class="exec-kv-unit">Pile/CD</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${snapshot.pileStats.avgLm.toFixed(1)}</span><span class="exec-kv-unit">Lm/CD</span></div>`);
+          avgCell += activityBlock('piles', `<div class="exec-kv"><span class="exec-kv-num">${snapshot.pileStats.avgPiles.toFixed(1)}</span><span class="exec-kv-unit">Pile/CD</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${snapshot.pileStats.avgLm.toFixed(1)}</span><span class="exec-kv-unit">Lm/CD</span></div>`);
         }
         if (hasKing) {
           const kpAvg = snapshot.kingStats.avgInstalled > 0 ? snapshot.kingStats.avgInstalled : snapshot.kingStats.avgPredrilled;
-          avgCell += activityBlock('king', 'KingPosts', `<div class="exec-kv"><span class="exec-kv-num">${kpAvg.toFixed(1)}</span><span class="exec-kv-unit">Kingpost/CD</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${snapshot.kingStats.avgLm.toFixed(1)}</span><span class="exec-kv-unit">Lm/CD</span></div>`);
+          avgCell += activityBlock('king', `<div class="exec-kv"><span class="exec-kv-num">${kpAvg.toFixed(1)}</span><span class="exec-kv-unit">Kingpost/CD</span><span class="exec-kv-sep">|</span><span class="exec-kv-num">${snapshot.kingStats.avgLm.toFixed(1)}</span><span class="exec-kv-unit">Lm/CD</span></div>`);
         }
 
         // ETA column
@@ -1961,28 +2725,29 @@
         if (hasPiles) {
           const pileEtaDate = snapshot.pileStats.etaDate ? formatDateFullLabel(snapshot.pileStats.etaDate) : '-';
           const pileEtaMonths = snapshot.pileStats.etaMonths != null ? `${snapshot.pileStats.etaMonths.toFixed(1)} months remaining` : '';
-          etaCell += activityBlock('piles', 'Bored Piles', `<div class="exec-eta-date">${escapeHtml(pileEtaDate)}</div>${pileEtaMonths ? `<div class="exec-eta-months">${pileEtaMonths}</div>` : ''}`);
+          etaCell += activityBlock('piles', `<div class="exec-eta-date">${escapeHtml(pileEtaDate)}</div>${pileEtaMonths ? `<div class="exec-eta-months">${pileEtaMonths}</div>` : ''}`);
         }
         if (hasKing) {
           const kingEtaDate = snapshot.kingStats.etaDate ? formatDateFullLabel(snapshot.kingStats.etaDate) : '-';
           const kingEtaMonths = snapshot.kingStats.etaMonths != null ? `${snapshot.kingStats.etaMonths.toFixed(1)} months remaining` : '';
-          etaCell += activityBlock('king', 'KingPosts', `<div class="exec-eta-date">${escapeHtml(kingEtaDate)}</div>${kingEtaMonths ? `<div class="exec-eta-months">${kingEtaMonths}</div>` : ''}`);
+          etaCell += activityBlock('king', `<div class="exec-eta-date">${escapeHtml(kingEtaDate)}</div>${kingEtaMonths ? `<div class="exec-eta-months">${kingEtaMonths}</div>` : ''}`);
         }
 
         return `
           <tr>
             <td><div class="executive-project-name">${escapeHtml(snapshot.project)}</div></td>
-            <td><div class="exec-act-stack">${progressCell}</div></td>
-            <td><div class="exec-act-stack">${yesterdayCell}</div></td>
+            <td data-exec-project="${escapeHtml(snapshot.project)}" data-exec-tooltip="progress"><div class="exec-act-stack">${progressCell}</div></td>
+            <td data-exec-project="${escapeHtml(snapshot.project)}" data-exec-tooltip="yesterday"><div class="exec-act-stack">${yesterdayCell}</div></td>
             <td><div class="exec-act-stack">${avgCell}</div></td>
-            <td><div class="exec-act-stack">${etaCell}</div></td>
-            <td class="exec-scalar-cell">${snapshot.activeRigs}<span class="exec-unit"><br>${snapshot.equipment.ownedRigs} Owned | ${snapshot.equipment.rentedRigs} Rented</span></td>
-            <td class="exec-scalar-cell">${snapshot.manpower.total}</td>
+            <td data-exec-project="${escapeHtml(snapshot.project)}" data-exec-tooltip="eta"><div class="exec-act-stack">${etaCell}</div></td>
+            <td class="exec-scalar-cell" data-exec-project="${escapeHtml(snapshot.project)}" data-exec-tooltip="rigs">${snapshot.activeRigs}<span class="exec-unit"><br>${snapshot.equipment.ownedRigs} Owned | ${snapshot.equipment.rentedRigs} Rented</span></td>
+            <td class="exec-scalar-cell">${snapshot.manpowerCompanyTotal}</td>
             <td class="exec-scalar-cell">${snapshot.costPerLm > 0 ? `${snapshot.costPerLm.toFixed(0)}<span class="exec-unit"> AED/Lm</span>` : '-'}</td>
           </tr>
         `;
       }).join('');
       els.executiveMatrixBody.innerHTML = rows || `<tr><td colspan="8" style="padding:20px;color:var(--muted);">No executive data available.</td></tr>`;
+      bindExecutiveMatrixTooltips();
     }
 
     function renderExecutiveTimeline(snapshots) {
@@ -2770,9 +3535,12 @@
         updateUserContextUi();
       }
 
+      syncTopbarPageActions(page);
+
       els.navButtons.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.page === page);
       });
+      syncSidebarLayoutNav();
 
       if (page === 'executive') renderExecutivePage();
       if (page === 'resources') renderCompanyAnalyticsPage(selectedProject);
@@ -6157,27 +6925,46 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       if (els.companyEquipmentSummary) {
         const cards = [
           {
-            label: 'Total Equipment',
-            value: totals.all.total.toLocaleString(),
-            meta: formatEquipmentSummaryMeta(totals)
+            label: 'Rigs',
+            value: totals.rigs.total.toLocaleString(),
+            owned: totals.rigs.owned,
+            rented: totals.rigs.rented,
+            tone: 'rigs'
           },
           {
-            label: 'Total Owned',
-            value: totals.all.owned.toLocaleString(),
-            meta: `Rigs ${totals.rigs.owned} | Cranes ${totals.cranes.owned} | Others ${totals.others.owned}`
+            label: 'Cranes',
+            value: totals.cranes.total.toLocaleString(),
+            owned: totals.cranes.owned,
+            rented: totals.cranes.rented,
+            tone: 'cranes'
           },
           {
-            label: 'Total Rented',
-            value: totals.all.rented.toLocaleString(),
-            meta: `Rigs ${totals.rigs.rented} | Cranes ${totals.cranes.rented} | Others ${totals.others.rented}`
+            label: 'Other Equipment',
+            value: totals.others.total.toLocaleString(),
+            owned: totals.others.owned,
+            rented: totals.others.rented,
+            tone: 'others'
           }
         ];
 
         els.companyEquipmentSummary.innerHTML = cards.map(card => `
-          <div class="company-analytics-kpi company-equipment-kpi">
-            <div class="company-analytics-kpi-label">${escapeHtml(card.label)}</div>
-            <div class="company-analytics-kpi-value">${escapeHtml(card.value)}</div>
-            <div class="company-analytics-kpi-meta">${escapeHtml(card.meta)}</div>
+          <div class="company-analytics-kpi company-equipment-kpi company-equipment-kpi--${escapeHtml(card.tone)}">
+            <div class="company-equipment-kpi-head">
+              <div class="company-equipment-kpi-title">
+                <div class="company-analytics-kpi-label">${escapeHtml(card.label)}</div>
+                <div class="company-equipment-kpi-total-value">${escapeHtml(card.value)}</div>
+              </div>
+              <div class="company-equipment-kpi-inline-split">
+                <div class="company-equipment-kpi-inline-item company-equipment-kpi-inline-item--owned">
+                  <span class="company-equipment-kpi-split-label">Owned</span>
+                  <strong>${Number(card.owned || 0).toLocaleString()}</strong>
+                </div>
+                <div class="company-equipment-kpi-inline-item company-equipment-kpi-inline-item--rented">
+                  <span class="company-equipment-kpi-split-label">Rented</span>
+                  <strong>${Number(card.rented || 0).toLocaleString()}</strong>
+                </div>
+              </div>
+            </div>
           </div>
         `).join('');
       }
@@ -6189,27 +6976,39 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }
 
       function equipmentCell(bucket) {
-        const equipmentNames = bucket.names
+        const sortedNames = bucket.names
           .slice()
           .sort((a, b) => {
             const order = { owned: 0, rented: 1, other: 2 };
             const ownerDiff = (order[a.ownership] ?? 9) - (order[b.ownership] ?? 9);
             if (ownerDiff !== 0) return ownerDiff;
             return a.name.localeCompare(b.name);
-          })
-          .map(item => `<span class="company-equipment-name-chip company-equipment-name-chip--${escapeHtml(item.ownership)}">${escapeHtml(item.name)}</span>`)
-          .join('');
+          });
+        const ownedNames = sortedNames.filter(item => item.ownership === 'owned');
+        const rentedNames = sortedNames.filter(item => item.ownership === 'rented');
+        const otherNames = sortedNames.filter(item => item.ownership !== 'owned' && item.ownership !== 'rented');
         return `
           <div class="company-equipment-cell">
             <div class="company-equipment-topline">
               <div class="company-equipment-total">${bucket.total}</div>
-              <div class="company-equipment-split">
-                <span class="company-equipment-owned">Owned ${bucket.owned}</span>
-                <span class="company-equipment-divider">|</span>
-                <span class="company-equipment-rented">Rented ${bucket.rented}</span>
+            </div>
+            <div class="company-equipment-ledger">
+              <div class="company-equipment-ledger-row company-equipment-ledger-row--owned">
+                <span class="company-equipment-ledger-count">${bucket.owned}</span>
+                <div class="company-equipment-name-list">
+                  ${ownedNames.map(item => `<span class="company-equipment-name-chip company-equipment-name-chip--owned">${escapeHtml(item.name)}</span>`).join('') || '<span class="company-equipment-names-empty">-</span>'}
+                </div>
+              </div>
+              <div class="company-equipment-ledger-row company-equipment-ledger-row--rented">
+                <span class="company-equipment-ledger-count">${bucket.rented}</span>
+                <div class="company-equipment-name-list">
+                  ${[
+                    ...rentedNames.map(item => `<span class="company-equipment-name-chip company-equipment-name-chip--rented">${escapeHtml(item.name)}</span>`),
+                    ...otherNames.map(item => `<span class="company-equipment-name-chip company-equipment-name-chip--other">${escapeHtml(item.name)}</span>`)
+                  ].join('') || '<span class="company-equipment-names-empty">-</span>'}
+                </div>
               </div>
             </div>
-            ${equipmentNames ? `<div class="company-equipment-names">${equipmentNames}</div>` : '<div class="company-equipment-names company-equipment-names-empty">-</div>'}
           </div>
         `;
       }
@@ -6218,6 +7017,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         <tr>
           <td class="company-equipment-project">
             <div class="company-equipment-project-name">${escapeHtml(project)}</div>
+            <div class="company-equipment-project-rows">
+              <div class="company-equipment-project-row company-equipment-project-row--owned">Owned</div>
+              <div class="company-equipment-project-row company-equipment-project-row--rented">Rented</div>
+            </div>
           </td>
           <td>${equipmentCell(buckets.rigs)}</td>
           <td>${equipmentCell(buckets.cranes)}</td>
@@ -7143,6 +7946,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }
       els.companyAnalyticsLayoutButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.companyAnalyticsLayout === companyAnalyticsLayoutMode));
       els.companyAnalyticsScopeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.companyAnalyticsScope === companyAnalyticsScopeMode));
+      syncSidebarLayoutNav();
       els.companyAnalyticsScopeButtons.forEach(btn => {
         const isAllButton = btn.dataset.companyAnalyticsScope === 'all';
         btn.disabled = isHeatmap && !isAllButton;
@@ -8767,6 +9571,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         if (els.refreshDashboardBtn) {
           els.refreshDashboardBtn.addEventListener('click', refreshDashboardData);
         }
+        if (els.printMapPdfBtn) {
+          els.printMapPdfBtn.addEventListener('click', triggerMapPrintLayout);
+        }
 
         els.authForm?.addEventListener('submit', evt => {
           evt.preventDefault();
@@ -8834,6 +9641,25 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           btn.addEventListener('click', () => setActivePage(btn.dataset.page));
         });
 
+        els.navSubButtons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            const targetPage = btn.dataset.page || 'executive';
+            if (btn.dataset.executiveLayoutNav) {
+              setActivePage('executive');
+              setExecutiveOverviewLayout(btn.dataset.executiveLayoutNav || 'matrix');
+              return;
+            }
+            if (btn.dataset.companyLayoutNav) {
+              companyAnalyticsLayoutMode = btn.dataset.companyLayoutNav || 'heatmap';
+              if (companyAnalyticsLayoutMode === 'heatmap') {
+                companyAnalyticsScopeMode = 'all';
+              }
+              setActivePage(targetPage);
+              renderCompanyAnalyticsPage(selectedProject);
+            }
+          });
+        });
+
         els.executiveOverviewLayoutButtons.forEach(btn => {
           btn.addEventListener('click', () => {
             setExecutiveOverviewLayout(btn.dataset.executiveLayout || 'matrix');
@@ -8890,6 +9716,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
         setExecutiveOverviewLayout(executiveOverviewLayout);
         setExecutiveView('overview');
+        syncSidebarLayoutNav();
 
         els.prodToolButtons.forEach(btn => btn.addEventListener('click', () => {
           const key = btn.dataset.prodKey;

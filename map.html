@@ -58,9 +58,51 @@
     }
     .footer-text { position: absolute; left: 14px; font-size: 12px; letter-spacing: 0.3px; color: #fff; }
 
+    .map-legend {
+      position: absolute;
+      left: 16px;
+      bottom: 48px;
+      z-index: 46;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: #fff;
+    }
+    .map-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.9);
+      white-space: nowrap;
+    }
+    .map-legend-swatch {
+      width: 18px;
+      height: 18px;
+      position: relative;
+      flex: 0 0 18px;
+    }
+    .map-legend-swatch.circle::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 2px solid #2D7FF9;
+      border-radius: 50%;
+    }
+    .map-legend-swatch.rectangle::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 2px solid #B784D7;
+      border-radius: 3px;
+    }
+
     .tests-legend {
       position: absolute;
-      right: 16px;
+      left: 16px;
       bottom: 48px;
       z-index: 46;
       min-width: 150px;
@@ -175,8 +217,8 @@
 
     .status-legend {
       position: absolute;
-      right: 16px;
-      bottom: 150px;
+      left: 16px;
+      bottom: 170px;
       z-index: 46;
       min-width: 150px;
       padding: 9px 11px;
@@ -223,6 +265,114 @@
     .visibility-label { font-size: 11px; color: rgba(255,255,255,0.82); }
     .visibility-value { font-size: 11px; color: rgba(255,255,255,0.62); }
     .visibility-slider { width: 100%; accent-color: var(--gold); }
+
+    .orbit-joystick {
+      position: absolute;
+      right: 16px;
+      bottom: 48px;
+      z-index: 47;
+      width: 150px;
+      padding: 10px 10px 12px;
+      border-radius: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      touch-action: none;
+      user-select: none;
+    }
+    .orbit-joystick.disabled {
+      opacity: 0.48;
+    }
+    .orbit-joystick-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .orbit-joystick-title {
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.94);
+    }
+    .orbit-joystick-mode {
+      font-size: 9px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.62);
+    }
+    .orbit-joystick-pad {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      touch-action: none;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.055) 34%, rgba(255,255,255,0.025) 65%, rgba(255,255,255,0.012) 100%);
+      overflow: hidden;
+    }
+    .orbit-joystick-pad::before,
+    .orbit-joystick-pad::after {
+      content: "";
+      position: absolute;
+      background: rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+    .orbit-joystick-pad::before {
+      left: 50%;
+      top: 12px;
+      bottom: 12px;
+      width: 1px;
+      transform: translateX(-50%);
+    }
+    .orbit-joystick-pad::after {
+      top: 50%;
+      left: 12px;
+      right: 12px;
+      height: 1px;
+      transform: translateY(-50%);
+    }
+    .orbit-joystick-ring {
+      position: absolute;
+      inset: 14px;
+      border-radius: 50%;
+      border: 1px dashed rgba(255,255,255,0.12);
+      pointer-events: none;
+    }
+    .orbit-joystick-stick {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 38px;
+      height: 38px;
+      margin-left: -19px;
+      margin-top: -19px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.18);
+      background:
+        radial-gradient(circle at 35% 35%, rgba(255,255,255,0.38), rgba(255,255,255,0.14) 42%, rgba(96,174,255,0.24) 100%);
+      box-shadow:
+        0 10px 24px rgba(0,0,0,0.28),
+        inset 0 1px 0 rgba(255,255,255,0.18);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      transform: translate3d(0, 0, 0);
+      transition: transform 120ms ease-out;
+      pointer-events: none;
+    }
+    .orbit-joystick.dragging .orbit-joystick-stick {
+      transition: none;
+    }
+    .orbit-joystick-caption {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.64);
+      letter-spacing: 0.02em;
+    }
 
     .chart-card {
       position: absolute; left: 16px; bottom: 48px; width: 365px; max-width: calc(100vw - 32px);
@@ -478,6 +628,7 @@
       }
 
       body.print-mode .progress-card,
+      body.print-mode .map-legend,
       body.print-mode .status-legend,
       body.print-mode .tests-legend {
         background: rgba(255,255,255,0.90) !important;
@@ -593,11 +744,27 @@
       .visibility-slider { height: 18px; }
       .chart-card { width: calc(100vw - 16px); left: 8px; bottom: calc(38px + env(safe-area-inset-bottom)); border-radius: 16px; }
 
-      .tests-legend { right: 8px; bottom: calc(38px + env(safe-area-inset-bottom)); min-width: 132px; padding: 9px 10px; border-radius: 14px; }
+      .map-legend { left: 8px; bottom: calc(38px + env(safe-area-inset-bottom)); right: auto; gap: 10px; padding: 8px 10px; border-radius: 14px; flex-wrap: wrap; max-width: calc(100vw - 148px); }
+      .tests-legend { display: none !important; }
       .status-legend { display: none !important; }
-      .tests-legend-title { font-size: 10px; margin-bottom: 6px; }
-      .tests-legend-row { font-size: 9px; gap: 6px; margin-bottom: 5px; }
-      .tests-legend-swatch { width: 18px; height: 18px; flex-basis: 18px; }
+      .orbit-joystick {
+        right: 8px;
+        bottom: calc(38px + env(safe-area-inset-bottom));
+        width: 124px;
+        padding: 8px 8px 10px;
+        border-radius: 16px;
+      }
+      .orbit-joystick-title { font-size: 9px; }
+      .orbit-joystick-mode,
+      .orbit-joystick-caption { font-size: 8px; }
+      .orbit-joystick-stick {
+        width: 32px;
+        height: 32px;
+        margin-left: -16px;
+        margin-top: -16px;
+      }
+      .map-legend-item { font-size: 9px; gap: 6px; }
+      .map-legend-swatch { width: 16px; height: 16px; flex-basis: 16px; }
       .chart-card-header { padding: 10px 12px 8px 12px; min-height: 46px; }
       .chart-title-wrap { padding-right: 62px; }
       .chart-title { font-size: 12px; }
@@ -689,19 +856,29 @@
   </div>
   </div>
 
-  <div class="footer"><div class="footer-text">APFC | Click any element for details | Right Click and drag for rotation</div></div>
-
-  <div class="status-legend glass-card" id="statusLegend">
-    <div class="status-legend-title">Pile Status</div>
-    <div class="status-legend-row"><span class="status-dot executed"></span><span>Executed</span></div>
-    <div class="status-legend-row"><span class="status-dot yesterday"></span><span>Last Shift</span></div>
-    <div class="status-legend-row"><span class="status-dot remaining"></span><span>Remaining</span></div>
+  <div class="orbit-joystick glass-card disabled" id="orbitJoystick" aria-label="3D orbit joystick">
+    <div class="orbit-joystick-head">
+      <div class="orbit-joystick-title">3D Orbit</div>
+      <div class="orbit-joystick-mode" id="orbitJoystickMode">2D</div>
+    </div>
+    <div class="orbit-joystick-pad" id="orbitJoystickPad" role="application" aria-label="Drag to rotate and tilt the map">
+      <div class="orbit-joystick-ring"></div>
+      <div class="orbit-joystick-stick" id="orbitJoystickStick"></div>
+    </div>
+    <div class="orbit-joystick-caption">
+      <span>Rotate</span>
+      <span>Tilt</span>
+    </div>
   </div>
 
-  <div class="tests-legend glass-card" id="testsLegend">
-    <div class="tests-legend-title">Pile Tests</div>
-    <div class="tests-legend-row"><span class="tests-legend-swatch circle"></span><span>Sonic Test</span></div>
-    <div class="tests-legend-row"><span class="tests-legend-swatch rectangle"></span><span>Dynamic Test</span></div>
+  <div class="footer"><div class="footer-text">APFC | Click any element for details | Right Click and drag for rotation</div></div>
+
+  <div class="map-legend glass-card" id="mapLegend">
+    <div class="map-legend-item"><span class="status-dot executed"></span><span>Executed</span></div>
+    <div class="map-legend-item"><span class="status-dot yesterday"></span><span>Last Shift</span></div>
+    <div class="map-legend-item"><span class="status-dot remaining"></span><span>Remaining</span></div>
+    <div class="map-legend-item"><span class="map-legend-swatch circle"></span><span>Sonic Test</span></div>
+    <div class="map-legend-item"><span class="map-legend-swatch rectangle"></span><span>Dynamic Test</span></div>
   </div>
   <div id="sidePanel" class="side-panel">
     <div class="side-panel-header">
@@ -1826,6 +2003,10 @@
     const view3DBtn = document.getElementById('view3DBtn');
     const streetBtn = document.getElementById('streetBtn');
     const satBtn = document.getElementById('satBtn');
+    const orbitJoystick = document.getElementById('orbitJoystick');
+    const orbitJoystickPad = document.getElementById('orbitJoystickPad');
+    const orbitJoystickStick = document.getElementById('orbitJoystickStick');
+    const orbitJoystickMode = document.getElementById('orbitJoystickMode');
     const sidePanel = document.getElementById('sidePanel');
     const panelTitle = document.getElementById('panelTitle');
     const panelBody = document.getElementById('panelBody');
@@ -1852,6 +2033,117 @@
     }
     if (visibilityToggleBtn) {
       visibilityToggleBtn.addEventListener('click', () => { isVisibilityCollapsed = !isVisibilityCollapsed; applyVisibilityCollapsedState(); });
+    }
+
+    const orbitJoystickState = {
+      active: false,
+      pointerId: null,
+      vectorX: 0,
+      vectorY: 0,
+      raf: 0
+    };
+
+    function applyOrbitJoystickStick() {
+      if (!orbitJoystickStick) return;
+      orbitJoystickStick.style.transform = `translate3d(${(orbitJoystickState.vectorX * 36).toFixed(1)}px, ${(orbitJoystickState.vectorY * 36).toFixed(1)}px, 0)`;
+    }
+
+    function stopOrbitJoystickLoop() {
+      if (orbitJoystickState.raf) {
+        cancelAnimationFrame(orbitJoystickState.raf);
+        orbitJoystickState.raf = 0;
+      }
+    }
+
+    function syncOrbitJoystickUi() {
+      const is3DMode = getCurrentViewMode() === '3d';
+      if (orbitJoystick) orbitJoystick.classList.remove('disabled');
+      if (orbitJoystickMode) orbitJoystickMode.textContent = is3DMode ? '3D' : '2D';
+    }
+
+    function applyJoystickViewModeUi(is3D) {
+      planViewBtn.classList.toggle('active', !is3D);
+      view3DBtn.classList.toggle('active', is3D);
+      if (pileLayer) pileLayer.setViewMode(is3D);
+      syncOrbitJoystickUi();
+    }
+
+    function runOrbitJoystickLoop() {
+      if (orbitJoystickState.raf) return;
+      const tick = () => {
+        orbitJoystickState.raf = 0;
+        if (!orbitJoystickState.active) return;
+        const vx = orbitJoystickState.vectorX;
+        const vy = orbitJoystickState.vectorY;
+        if (Math.abs(vx) > 0.02 || Math.abs(vy) > 0.02) {
+          map.stop();
+          map.setBearing(map.getBearing() + (vx * 2.4));
+          if (Math.abs(vy) > 0.02) {
+            const nextPitch = Math.max(0, Math.min(78, map.getPitch() - (vy * 1.2)));
+            map.setPitch(nextPitch);
+            applyJoystickViewModeUi(nextPitch > 1);
+          }
+        }
+        orbitJoystickState.raf = requestAnimationFrame(tick);
+      };
+      orbitJoystickState.raf = requestAnimationFrame(tick);
+    }
+
+    function updateOrbitJoystickFromPointer(clientX, clientY) {
+      if (!orbitJoystickPad) return;
+      const rect = orbitJoystickPad.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const maxRadius = Math.max(12, (Math.min(rect.width, rect.height) / 2) - 24);
+      const dist = Math.hypot(dx, dy) || 1;
+      const limited = Math.min(dist, maxRadius);
+      orbitJoystickState.vectorX = (dx / dist) * (limited / maxRadius);
+      orbitJoystickState.vectorY = (dy / dist) * (limited / maxRadius);
+      applyOrbitJoystickStick();
+    }
+
+    function releaseOrbitJoystick() {
+      orbitJoystickState.active = false;
+      orbitJoystickState.pointerId = null;
+      orbitJoystickState.vectorX = 0;
+      orbitJoystickState.vectorY = 0;
+      if (orbitJoystick) orbitJoystick.classList.remove('dragging');
+      applyOrbitJoystickStick();
+      stopOrbitJoystickLoop();
+      isMapInteracting = false;
+      map.getCanvas().style.cursor = '';
+    }
+
+    function handleOrbitJoystickPointerMove(evt) {
+      if (!orbitJoystickState.active || evt.pointerId !== orbitJoystickState.pointerId) return;
+      updateOrbitJoystickFromPointer(evt.clientX, evt.clientY);
+    }
+
+    function handleOrbitJoystickPointerRelease(evt) {
+      if (!orbitJoystickState.active || evt.pointerId !== orbitJoystickState.pointerId) return;
+      releaseOrbitJoystick();
+    }
+
+    if (orbitJoystickPad) {
+      orbitJoystickPad.addEventListener('pointerdown', evt => {
+        evt.preventDefault();
+        orbitJoystickState.active = true;
+        orbitJoystickState.pointerId = evt.pointerId;
+        orbitJoystickState.vectorX = 0;
+        orbitJoystickState.vectorY = 0;
+        orbitJoystickPad.setPointerCapture?.(evt.pointerId);
+        if (orbitJoystick) orbitJoystick.classList.add('dragging');
+        isMapInteracting = true;
+        map.getCanvas().style.cursor = 'grabbing';
+        applyOrbitJoystickStick();
+        runOrbitJoystickLoop();
+      });
+      orbitJoystickPad.addEventListener('pointermove', handleOrbitJoystickPointerMove);
+      orbitJoystickPad.addEventListener('pointerup', handleOrbitJoystickPointerRelease);
+      orbitJoystickPad.addEventListener('pointercancel', handleOrbitJoystickPointerRelease);
+      orbitJoystickPad.addEventListener('lostpointercapture', releaseOrbitJoystick);
     }
 
     function renderProgressCard() {
@@ -2185,9 +2477,7 @@
 
     function setMapView(mode, options = {}) {
       const is3D = mode === '3d';
-      planViewBtn.classList.toggle('active', !is3D);
-      view3DBtn.classList.toggle('active', is3D);
-      if (pileLayer) pileLayer.setViewMode(is3D);
+      applyJoystickViewModeUi(is3D);
       const scope = getActiveScope();
       const focusedRecords = getFocusedElementRecords(scope);
       const focusRecords = getFocusRecords(focusedRecords);
@@ -2223,6 +2513,7 @@
     }
     planViewBtn.addEventListener('click', () => setMapView('2d'));
     view3DBtn.addEventListener('click', () => setMapView('3d'));
+    syncOrbitJoystickUi();
 
     let isSatellite = false;
 
@@ -2856,6 +3147,7 @@
       bearing: 0,
       antialias: true
     });
+    globalThis.__apfcMapInstance = map;
     map.addControl(new mapboxgl.NavigationControl(), 'top-right');
     map.addControl(new mapboxgl.FullscreenControl(), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
