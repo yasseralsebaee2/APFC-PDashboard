@@ -3,6 +3,8 @@
     const DATA_FILE_KEYS = {
       piles: 'piles',
       kingpost: 'kingpost',
+      anchors: 'anchors',
+      secantpiles: 'secantpiles',
       users: 'users',
       manpower: 'manpower',
       manpowers: 'manpowers',
@@ -64,9 +66,24 @@
       chartWrap: document.getElementById('chartWrap'),
       chartSvg: document.getElementById('chartSvg'),
       chartTooltip: document.getElementById('chartTooltip'),
+      chartTitleCumulative: document.getElementById('chartTitleCumulative'),
+      chartSubtitleCumulative: document.getElementById('chartSubtitleCumulative'),
+      chartTagCumulative: document.getElementById('chartTagCumulative'),
+      chartGridCumulative: document.getElementById('chartGridCumulative'),
+      chartSeriesCumulative: document.getElementById('chartSeriesCumulative'),
+      chartLabelsCumulative: document.getElementById('chartLabelsCumulative'),
+      chartXAxisCumulative: document.getElementById('chartXAxisCumulative'),
+      chartWrapCumulative: document.getElementById('chartWrapCumulative'),
+      chartSvgCumulative: document.getElementById('chartSvgCumulative'),
+      chartTooltipCumulative: document.getElementById('chartTooltipCumulative'),
       overviewSeriesLegend: document.getElementById('overviewSeriesLegend'),
       overviewActivityButtons: Array.from(document.querySelectorAll('#overviewActivityToggle button')),
       overviewActivityToggle: document.getElementById('overviewActivityToggle'),
+      overviewActivityKpiBody: document.getElementById('overviewActivityKpiBody'),
+      overviewResourcesBody: document.getElementById('overviewResourcesBody'),
+      overviewRigUtilBody: document.getElementById('overviewRigUtilBody'),
+      overviewManpowerPie: document.getElementById('overviewManpowerPie'),
+      overviewManpowerRank: document.getElementById('overviewManpowerRank'),
       overviewMatrixTitle: document.getElementById('overviewMatrixTitle'),
       overviewMatrixTag: document.getElementById('overviewMatrixTag'),
       overviewMatrixHead1: document.getElementById('overviewMatrixHead1'),
@@ -201,6 +218,8 @@
 
     let rawRows = [];
     let kingPostRows = [];
+    let anchorRows = [];
+    let secantPileRows = [];
     let manpowerRows = [];
     let companyManpowerRows = [];
     let equipmentRegistryRows = [];
@@ -227,6 +246,8 @@
     let utilizationView = 'matrix';
     let overviewDateMode = 'shift'; // shared reporting mode for Overview + Production only
     let overviewActivityMode = 'piles';
+    let chartHoverGuide = null;
+    let chartHoverGuideCumulative = null;
     let prodState = {
       gross: 'day',
       drilling: 'day',
@@ -339,6 +360,53 @@
         }));
       }
       return [];
+    }
+
+    function extractAnchorList(data) {
+      const payload = data?.body ?? data;
+      const rows = Array.isArray(payload) ? payload : [];
+      return rows
+        .filter(row => row && typeof row === 'object')
+        .map(row => {
+          const freeLength = Number(row.design_freelength ?? row.design_FreeLength ?? 0) || 0;
+          const bondingLength = Number(row.design_bondinglength ?? row.design_BondingLength ?? 0) || 0;
+          const installDate = row.asbuilt_installationdate || row.asbuilt_InstallationDate || '';
+          return {
+            project: normalizeText(row.project || row.Project),
+            plot: normalizeText(row.plot || row.Plot),
+            id: normalizeText(row.anchorid || row.anchorId || row.AnchorID),
+            activityLabel: 'Anchors',
+            countUnit: 'Anchor',
+            castingDate: installDate,
+            asbuilt_depth: freeLength + bondingLength,
+            machine: normalizeText(row.asbuilt_rig || row.asbuilt_Rig || ''),
+            isExecuted: !!normalizeDateString(installDate)
+          };
+        });
+    }
+
+    function extractSecantPileList(data) {
+      const payload = data?.body ?? data;
+      const rows = Array.isArray(payload) ? payload : [];
+      return rows
+        .filter(row => row && typeof row === 'object')
+        .map(row => {
+          const top = Number(row.design_topofshoring ?? row.design_TopOfShoring ?? 0);
+          const toe = Number(row.design_toelevel ?? row.design_ToeLevel ?? 0);
+          const drillingDate = row.asbuilt_drillingdate || row.asbuilt_DrillingDate || '';
+          return {
+            project: normalizeText(row.project || row.Project),
+            plot: normalizeText(row.plot || row.Plot),
+            id: normalizeText(row.pileid || row.pileId || row.PileID),
+            elementType: normalizeText(row.type || row.Type || 'SecantPile'),
+            activityLabel: 'Secant Piles',
+            countUnit: 'SecantPile',
+            castingDate: drillingDate,
+            asbuilt_depth: Math.abs(top - toe),
+            machine: normalizeText(row.asbuilt_rig || row.asbuilt_Rig || ''),
+            isExecuted: !!normalizeDateString(drillingDate)
+          };
+        });
     }
 
     function isAllPlotsValue(value) {
@@ -1753,8 +1821,16 @@
           design_back_x: row.design_back_x ?? row.design_back_X ?? row.design_Back_X ?? row.design_BackX ?? row.designBackX ?? null,
           design_back_y: row.design_back_y ?? row.design_back_Y ?? row.design_Back_Y ?? row.design_BackY ?? row.designBackY ?? null,
           operationalStatus: normalizeText(row.operationalStatus || row.OperationalStatus),
-          isInstalled: row.isInstalled ?? row.IsInstalled ?? null,
-          beamInstallation: shiftKingPostDateTime(row.beamInstallation || row.BeamInstallation),
+          isInstalled: row.isInstalled ?? row.IsInstalled ?? row.asbuilt_isInstalled ?? row.asbuilt_IsInstalled ?? null,
+          beamInstallation: shiftKingPostDateTime(
+            row.beamInstallation ||
+            row.BeamInstallation ||
+            row.asbuilt_beamInstallation ||
+            row.asbuilt_BeamInstallation ||
+            row.asbuilt_beaminstallation ||
+            row.asbuilt_beaminstallationdate ||
+            row.asbuilt_BeamInstallationDate
+          ),
           drillingStart: shiftKingPostDateTime(row.asbuilt_DrillingStart || row.asbuilt_drillingStart),
           drillingEnd: shiftKingPostDateTime(row.asbuilt_DrillingEnd || row.asbuilt_drillingEnd),
           drillingDuration: Number(row.asbuilt_DurationDrilling ?? row.asbuilt_durationdrilling ?? 0) || 0,
@@ -1778,7 +1854,9 @@
     function getCombinedProjectList() {
       const pileProjects = rawRows.map(r => normalizeText(r.project || r.Project));
       const kingPostProjects = kingPostRows.map(r => normalizeText(r.project));
-      const projects = Array.from(new Set([...pileProjects, ...kingPostProjects].filter(Boolean))).sort((a, b) => a.localeCompare(b));
+      const anchorProjects = anchorRows.map(r => normalizeText(r.project));
+      const secantProjects = secantPileRows.map(r => normalizeText(r.project));
+      const projects = Array.from(new Set([...pileProjects, ...kingPostProjects, ...anchorProjects, ...secantProjects].filter(Boolean))).sort((a, b) => a.localeCompare(b));
       if (projects.includes(DEFAULT_PROJECT)) {
         return [DEFAULT_PROJECT, ...projects.filter(project => project !== DEFAULT_PROJECT)];
       }
@@ -1795,6 +1873,16 @@
       });
     }
 
+    function getScopedOverviewRows(list, project) {
+      const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
+      const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
+      return (Array.isArray(list) ? list : []).filter(r => {
+        const projectMatch = !targetProject || normalizeText(r.project) === targetProject;
+        const plotMatch = isAllPlotsValue(selectedPlot) || normalizeText(r.plot) === normalizeText(selectedPlot);
+        return projectMatch && plotMatch;
+      });
+    }
+
     function getKingPostRowsForProject(project) {
       const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
       const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
@@ -1803,6 +1891,14 @@
         const plotMatch = isAllPlotsValue(selectedPlot) || normalizeText(r.plot) === normalizeText(selectedPlot);
         return projectMatch && plotMatch;
       });
+    }
+
+    function getAnchorRowsForProject(project) {
+      return getScopedOverviewRows(anchorRows, project);
+    }
+
+    function getSecantPileRowsForProject(project) {
+      return getScopedOverviewRows(secantPileRows, project);
     }
 
     function getPortfolioPileRows(project = 'All Projects') {
@@ -1825,10 +1921,159 @@
       return getKingPostRowsForProject(project).length > 0;
     }
 
+    function hasAnchorActivity(project) {
+      return getAnchorRowsForProject(project).length > 0;
+    }
+
+    function hasSecantPileActivity(project) {
+      return getSecantPileRowsForProject(project).length > 0;
+    }
+
     function getAvailableOverviewActivities(project = selectedProject) {
       const activities = [];
       if (hasPileActivity(project)) activities.push('piles');
       if (hasKingPostActivity(project)) activities.push('kingposts');
+      if (hasAnchorActivity(project)) activities.push('anchors');
+      if (hasSecantPileActivity(project)) activities.push('secantpiles');
+      return activities;
+    }
+
+    function getOverviewActivityButtonLabel(mode) {
+      if (mode === 'kingposts') return 'KingPosts';
+      if (mode === 'anchors') return 'Anchors';
+      if (mode === 'secantpiles') return 'Secant Piles';
+      return 'Bored Piles';
+    }
+
+    function getOverviewModeRows(project = selectedProject) {
+      if (overviewActivityMode === 'kingposts') return getKingPostRowsForProject(project);
+      if (overviewActivityMode === 'anchors') return getAnchorRowsForProject(project);
+      if (overviewActivityMode === 'secantpiles') return getSecantPileRowsForProject(project);
+      return getRowsForProject(project);
+    }
+
+    function getPileElementTypeLabel(row) {
+      return normalizeText(row?.elementtype || row?.elementType || row?.ElementType || 'BoredPile') || 'BoredPile';
+    }
+
+    function normalizePileElementTypeKey(value) {
+      return normalizeText(value).toLowerCase().replace(/[\s_-]+/g, '');
+    }
+
+    function isBoredPileElementType(value) {
+      return normalizePileElementTypeKey(value) === 'boredpile';
+    }
+
+    function getOverviewKpiActivities(project = selectedProject) {
+      const pileRows = getRowsForProject(project);
+      const kingRows = getKingPostRowsForProject(project);
+      const anchorScopeRows = getAnchorRowsForProject(project);
+      const secantScopeRows = getSecantPileRowsForProject(project);
+      const activities = [];
+      const projectPlots = new Set(
+        [...pileRows, ...kingRows, ...anchorScopeRows, ...secantScopeRows]
+          .map(row => normalizeText(row?.plot))
+          .filter(plot => plot && !isAllPlotsValue(plot))
+      );
+      const segmentByPlot = projectPlots.size > 1;
+
+      const pileGroups = new Map();
+      pileRows.forEach(row => {
+        const label = getPileElementTypeLabel(row);
+        const plotLabel = normalizeText(row?.plot);
+        const plotKey = segmentByPlot ? (plotLabel || '-') : '';
+        const key = `${normalizePileElementTypeKey(label) || 'boredpile'}__${plotKey}`;
+        if (!pileGroups.has(key)) {
+          pileGroups.set(key, {
+            key,
+            kind: 'pile',
+            label,
+            countUnit: label,
+            plotLabel: segmentByPlot ? (plotLabel || '-') : '',
+            rows: []
+          });
+        }
+        pileGroups.get(key).rows.push(row);
+      });
+
+      const pileItems = Array.from(pileGroups.values()).sort((a, b) => {
+        const aBored = isBoredPileElementType(a.label) ? 0 : 1;
+        const bBored = isBoredPileElementType(b.label) ? 0 : 1;
+        return aBored - bBored
+          || a.label.localeCompare(b.label, undefined, { numeric: true })
+          || normalizeText(a.plotLabel).localeCompare(normalizeText(b.plotLabel), undefined, { numeric: true });
+      });
+
+      pileItems.forEach(item => activities.push(item));
+
+      if (kingRows.length) {
+        if (segmentByPlot) {
+          const kingByPlot = new Map();
+          kingRows.forEach(row => {
+            const plotLabel = normalizeText(row?.plot) || '-';
+            if (!kingByPlot.has(plotLabel)) {
+              kingByPlot.set(plotLabel, {
+                key: `kingposts__${plotLabel}`,
+                kind: 'kingposts',
+                label: 'KingPosts',
+                countUnit: 'Kingpost',
+                plotLabel,
+                rows: []
+              });
+            }
+            kingByPlot.get(plotLabel).rows.push(row);
+          });
+          Array.from(kingByPlot.values())
+            .sort((a, b) => normalizeText(a.plotLabel).localeCompare(normalizeText(b.plotLabel), undefined, { numeric: true }))
+            .forEach(item => activities.push(item));
+        } else {
+          activities.push({
+            key: 'kingposts',
+            kind: 'kingposts',
+            label: 'KingPosts',
+            countUnit: 'Kingpost',
+            plotLabel: '',
+            rows: kingRows
+          });
+        }
+      }
+
+      const pushScopedLinearActivity = (rows, activityLabel, countUnit) => {
+        if (!rows.length) return;
+        if (segmentByPlot) {
+          const byPlot = new Map();
+          rows.forEach(row => {
+            const plotLabel = normalizeText(row?.plot) || '-';
+            if (!byPlot.has(plotLabel)) {
+              byPlot.set(plotLabel, {
+                key: `${normalizePileElementTypeKey(activityLabel)}__${plotLabel}`,
+                kind: 'linear',
+                label: activityLabel,
+                countUnit,
+                plotLabel,
+                rows: []
+              });
+            }
+            byPlot.get(plotLabel).rows.push(row);
+          });
+          Array.from(byPlot.values())
+            .sort((a, b) => normalizeText(a.plotLabel).localeCompare(normalizeText(b.plotLabel), undefined, { numeric: true }))
+            .forEach(item => activities.push(item));
+          return;
+        }
+        activities.push({
+          key: normalizePileElementTypeKey(activityLabel),
+          kind: 'linear',
+          label: activityLabel,
+          countUnit,
+          plotLabel: '',
+          rows
+        });
+      };
+
+      pushScopedLinearActivity(anchorScopeRows, 'Anchors', 'Anchor');
+      pushScopedLinearActivity(secantScopeRows, 'Secant Piles', 'SecantPile');
+
       return activities;
     }
 
@@ -1842,17 +2087,11 @@
 
       if (els.overviewActivityToggle) {
         const showToggle = available.length > 1;
+        els.overviewActivityToggle.innerHTML = available.map(mode => `
+          <button class="chart-toggle ${mode === overviewActivityMode ? 'active' : ''}" data-activity="${mode}" type="button">${escapeHtml(getOverviewActivityButtonLabel(mode))}</button>
+        `).join('');
         els.overviewActivityToggle.hidden = !showToggle;
         els.overviewActivityToggle.style.display = showToggle ? '' : 'none';
-      }
-
-      if (els.overviewActivityButtons?.length) {
-        els.overviewActivityButtons.forEach(btn => {
-          const mode = btn.dataset.activity;
-          btn.classList.toggle('active', mode === overviewActivityMode);
-          btn.hidden = !available.includes(mode);
-          btn.style.display = available.includes(mode) ? '' : 'none';
-        });
       }
     }
 
@@ -1862,6 +2101,20 @@
           { key: 'predrilled', label: 'Pre-Drilled', unit: 'kp' },
           { key: 'installed', label: 'Installed', unit: 'kp' },
           { key: 'lm', label: 'Lm', unit: 'Lm' }
+        ];
+      }
+      if (overviewActivityMode === 'anchors') {
+        return [
+          { key: 'piles', label: 'Anchors', unit: 'anchors' },
+          { key: 'lm', label: 'Lm', unit: 'Lm' },
+          { key: 'm3', label: 'm3', unit: 'm3' }
+        ];
+      }
+      if (overviewActivityMode === 'secantpiles') {
+        return [
+          { key: 'piles', label: 'Secant Piles', unit: 'secant piles' },
+          { key: 'lm', label: 'Lm', unit: 'Lm' },
+          { key: 'm3', label: 'm3', unit: 'm3' }
         ];
       }
       return [
@@ -1898,7 +2151,15 @@
     }
 
     function isKingPostPreDrilled(row) {
-      return normalizeText(row?.operationalStatus).toLowerCase() === 'readytoinstall';
+      const status = normalizeText(row?.operationalStatus).toLowerCase();
+      if (status === 'readytoinstall' || status === 'ready to install' || status === 'predrilled' || status === 'pre-drilled') return true;
+
+      // Some exports do not reliably populate operationalStatus; treat any recorded drilling window
+      // (or a non-zero drilled depth) as "pre-drilled" so progress KPIs work for kingpost projects.
+      if (normalizeText(row?.drillingEnd || row?.drillingStart)) return true;
+      if ((Number(row?.asbuiltDepth) || 0) > 0) return true;
+      if ((Number(row?.rig1Depth) || 0) > 0) return true;
+      return false;
     }
 
     function hasExplicitTimezoneSuffix(value) {
@@ -2163,7 +2424,9 @@
       const completed = installedRows.length;
       const predrilled = predrilledRows.length;
       const remaining = Math.max(0, total - completed);
+      const remainingPredrilled = Math.max(0, total - predrilled);
       const progress = total ? (completed / total) * 100 : 0;
+      const progressPredrilled = total ? (predrilled / total) * 100 : 0;
       const activeRigs = new Set(rows.map(r => normalizeText(r.rig1)).filter(Boolean)).size;
       const installedDates = Array.from(new Set(installedRows.map(r => getKingPostMetricDateKey(r, 'installed')).filter(Boolean))).sort();
       const predrilledDates = Array.from(new Set(predrilledRows.map(r => getKingPostMetricDateKey(r, 'predrilled')).filter(Boolean))).sort();
@@ -2190,7 +2453,24 @@
         etaDate = addWorkingDays(todayKey(), workingDaysNeeded);
         etaMonths = monthsBetween(todayKey(), etaDate);
       }
-      return { total, completed, predrilled, remaining, activeRigs, avgInstalled, avgPredrilled, avgLm, progress, yesterdayInstalled, yesterdayPredrilled, yesterdayKpLm, etaDate, etaMonths };
+      return {
+        total,
+        completed,
+        predrilled,
+        remaining,
+        remainingPredrilled,
+        activeRigs,
+        avgInstalled,
+        avgPredrilled,
+        avgLm,
+        progress,
+        progressPredrilled,
+        yesterdayInstalled,
+        yesterdayPredrilled,
+        yesterdayKpLm,
+        etaDate,
+        etaMonths
+      };
     }
 
     function lastCalendarDaysMetric(rows, metric, calendarDayCount = 7) {
@@ -2934,8 +3214,9 @@
           els.executiveTrendXAxis.appendChild(xLabel);
         });
         const startTime = performance.now();
-        const duration = 520;
-        const stagger = 26;
+        const dataCount = data.length;
+        const duration = Math.max(220, Math.min(420, 560 - dataCount * 4));
+        const stagger = Math.max(6, Math.min(18, 26 - dataCount * 0.22));
         const easeOut = t => 1 - Math.pow(1 - t, 3);
         const frame = now => {
           let running = false;
@@ -3832,6 +4113,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     function renderChart(rows, project = selectedProject) {
       const data = buildChartDataset(rows, chartMetric, chartMode);
       const plannedData = (chartMode === 'cumulative' && chartMetric === 'piles') ? buildPlannedCurve(rows, data, project) : [];
+      const isKingPosts = overviewActivityMode === 'kingposts' && getKingPostRowsForProject(project).length > 0;
+      const dailyBarFill = isKingPosts ? 'url(#barGradientKingpost)' : 'url(#barGradient)';
+      const cumulativeLineColor = isKingPosts ? 'rgba(96,165,250,0.95)' : 'rgba(142,240,191,0.95)';
+      const cumulativeAreaColor = isKingPosts ? 'rgba(96,165,250,0.14)' : 'rgba(142,240,191,0.12)';
+      const cumulativeDotColor = isKingPosts ? 'rgba(147,197,253,0.98)' : 'rgba(142,240,191,1)';
+      const cumulativeGlowColor = isKingPosts ? 'rgba(96,165,250,0.24)' : 'rgba(142,240,191,0.22)';
       if (els.overviewSeriesLegend) {
         const showLegend = chartMode === 'cumulative' && chartMetric === 'piles' && plannedData.length > 0;
         els.overviewSeriesLegend.hidden = !showLegend;
@@ -3904,7 +4191,15 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           const x = left + stepX * idx + stepX / 2;
           const h = (d.value / maxVal) * (innerH - 8);
           const y = top + innerH - h;
-          const bar = svgEl('rect', { x: x - barW / 2, y: top + innerH, width: barW, height: 0, rx: 8, class: 'bar-shape' });
+          const bar = svgEl('rect', {
+            x: x - barW / 2,
+            y: top + innerH,
+            width: barW,
+            height: 0,
+            rx: 8,
+            class: 'bar-shape',
+            style: `fill:${dailyBarFill};`
+          });
           els.chartSeries.appendChild(bar);
           const label = svgEl('text', { x, y: y - 8, class: 'bar-label', style: 'opacity:0; transition:opacity 180ms ease;' });
           label.textContent = chartMetric === 'piles' ? d.executedCount : Number(d.value.toFixed(1)).toString();
@@ -3950,8 +4245,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         }
 
         const startTime = performance.now();
-        const duration = 520;
-        const stagger = 26;
+        const pointCount = animatedBars.length;
+        const duration = pointCount > 45 ? 540 : pointCount > 30 ? 630 : pointCount > 18 ? 720 : 855;
+        const stagger = pointCount > 45 ? 4.05 : pointCount > 30 ? 6.3 : pointCount > 18 ? 10.8 : 20.25;
         const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
         const frame = now => {
           let running = false;
@@ -3985,7 +4281,13 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             plannedPath += `${idx === 0 ? 'M' : 'L'} ${x} ${plannedY} `;
           }
 
-          els.chartSeries.appendChild(svgEl('circle', { cx: x, cy: y, r: 5.5, class: 'point-dot' }));
+          els.chartSeries.appendChild(svgEl('circle', {
+            cx: x,
+            cy: y,
+            r: 5.5,
+            class: 'point-dot',
+            style: `fill:${cumulativeDotColor};`
+          }));
           const label = svgEl('text', { x, y: y - 10, class: 'point-label' });
           label.textContent = chartMetric === 'piles' ? Math.round(d.value).toString() : Number(d.value.toFixed(1)).toString();
           els.chartLabels.appendChild(label);
@@ -4029,7 +4331,11 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const lastX = left + stepX * (data.length - 1) + stepX / 2;
         area += ` L ${lastX} ${top + innerH} Z`;
 
-        const areaEl = svgEl('path', { d: area, class: 'area-shape', style: 'opacity:0; transition:opacity 260ms ease;' });
+        const areaEl = svgEl('path', {
+          d: area,
+          class: 'area-shape',
+          style: `fill:${cumulativeAreaColor}; opacity:0; transition:opacity 260ms ease;`
+        });
         els.chartSeries.appendChild(areaEl);
 
         let plannedEl = null;
@@ -4046,7 +4352,11 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           els.chartSeries.appendChild(plannedEl);
         }
 
-        const lineEl = svgEl('path', { d: path.trim(), class: 'line-shape' });
+        const lineEl = svgEl('path', {
+          d: path.trim(),
+          class: 'line-shape',
+          style: `stroke:${cumulativeLineColor}; filter:drop-shadow(0 0 8px ${cumulativeGlowColor});`
+        });
         els.chartSeries.appendChild(lineEl);
 
         const animatePath = pathEl => {
@@ -4187,12 +4497,57 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       if (chartHoverGuide) chartHoverGuide.style.display = 'none';
     }
 
+    function showCumulativeOverviewTooltip(dataPoint, options = {}) {
+      const wrap = els.chartWrapCumulative;
+      const tooltip = els.chartTooltipCumulative;
+      if (!wrap || !tooltip || !dataPoint) return;
+
+      const unit = metricUnit(chartMetric);
+      const isPiles = chartMetric === 'piles';
+      const periodValue = isPiles
+        ? Number(dataPoint.dayValue || dataPoint.executedCount || 0).toLocaleString()
+        : `${Number(dataPoint.dayValue || 0).toFixed(1).toLocaleString()} ${unit}`;
+      const cumulativeValue = isPiles
+        ? Number(dataPoint.value || 0).toLocaleString()
+        : `${Number(dataPoint.value || 0).toFixed(1).toLocaleString()} ${unit}`;
+
+      tooltip.innerHTML = `
+        <div class="tooltip-title">${periodTitle(dataPoint.date)}</div>
+        <div class="tooltip-row"><span>${metricLabel(chartMetric)} This ${chartGranularity === 'day' ? 'Date' : 'Period'}</span><strong>${periodValue}</strong></div>
+        <div class="tooltip-row"><span>Cumulative</span><strong>${cumulativeValue}</strong></div>
+      `;
+      tooltip.classList.add('visible');
+      wrap.appendChild(tooltip);
+
+      const anchorX = Number(options.anchorX || 0);
+      const anchorY = Number(options.anchorY || 0);
+      placeTooltipInScrollWrap(tooltip, wrap, anchorX, anchorY, 280, 120);
+
+      if (chartHoverGuideCumulative && options.showGuide) {
+        chartHoverGuideCumulative.setAttribute('x1', anchorX);
+        chartHoverGuideCumulative.setAttribute('x2', anchorX);
+        chartHoverGuideCumulative.style.display = 'block';
+      }
+    }
+
+    function hideCumulativeOverviewTooltip() {
+      const tooltip = els.chartTooltipCumulative;
+      if (!tooltip) return;
+      tooltip.classList.remove('visible');
+      tooltip.style.position = '';
+      tooltip.style.left = '';
+      tooltip.style.top = '';
+      tooltip.innerHTML = '';
+      if (chartHoverGuideCumulative) chartHoverGuideCumulative.style.display = 'none';
+    }
+
     function hideChartTooltipsOnOutsideInteraction(evt) {
       const target = evt.target;
       if (!target) return;
       if (target.closest('.hover-target')) return;
       if (target.closest('.chart-tooltip')) return;
       hideTooltip();
+      hideCumulativeOverviewTooltip();
       hideTimelineTooltip();
       hideUtilizationTimelineTooltip();
       if (typeof window.hideCostTtp === 'function') window.hideCostTtp();
@@ -4200,10 +4555,446 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
     function syncModeToggleUI() {
       const btn = document.getElementById('modeToggle');
+      if (!btn) return;
       const isCumulative = chartMode === 'cumulative';
       btn.classList.toggle('on', isCumulative);
       btn.setAttribute('aria-pressed', isCumulative ? 'true' : 'false');
       els.modeLabelCumulative.classList.toggle('active', isCumulative);
+    }
+
+    function renderCumulativeChart(rows, project = selectedProject) {
+      if (!els.chartSvgCumulative || !els.chartWrapCumulative) return;
+      const data = buildChartDataset(rows, chartMetric, 'cumulative');
+      const isKingPosts = overviewActivityMode === 'kingposts' && getKingPostRowsForProject(project).length > 0;
+      const titleMetric = metricLabel(chartMetric);
+      const granularityLabel = chartGranularity === 'day' ? 'Day' : (chartGranularity === 'week' ? 'Week' : 'Month');
+      const cumulativeLineColor = isKingPosts ? 'rgba(96,165,250,0.95)' : 'rgba(142,240,191,0.95)';
+      const cumulativeAreaColor = isKingPosts ? 'rgba(96,165,250,0.14)' : 'rgba(142,240,191,0.12)';
+      const cumulativeDotColor = isKingPosts ? 'rgba(147,197,253,0.98)' : 'rgba(142,240,191,0.95)';
+      if (els.chartTitleCumulative) els.chartTitleCumulative.textContent = `Cumulative ${titleMetric} by ${granularityLabel}`;
+      if (els.chartTagCumulative) els.chartTagCumulative.textContent = 'Cumulative';
+
+      clearSvgGroup(els.chartGridCumulative);
+      clearSvgGroup(els.chartSeriesCumulative);
+      clearSvgGroup(els.chartLabelsCumulative);
+      clearSvgGroup(els.chartXAxisCumulative);
+
+      if (!data.length) return;
+
+      const wrap = els.chartWrapCumulative;
+      const wrapWidth = wrap?.clientWidth || 920;
+      const wrapHeight = wrap?.clientHeight || 220;
+      const width = Math.max(Math.round(wrapWidth), 520);
+      const height = Math.max(Math.round(wrapHeight), 220);
+      const left = 58;
+      const right = 20;
+      const top = 16;
+      const bottom = 46;
+      const innerH = height - top - bottom;
+      const innerW = width - left - right;
+      const stepX = innerW / Math.max(data.length - 1, 1);
+      const svgWidth = width;
+      const maxVal = Math.max(1, ...data.map(d => d.value));
+      const pointCount = data.length;
+      const markerRadius = pointCount > 80 ? 2.2 : pointCount > 55 ? 2.6 : pointCount > 32 ? 3 : 3.6;
+      const markerOpacity = pointCount > 80 ? 0.74 : pointCount > 55 ? 0.8 : 0.9;
+      const lineWidth = pointCount > 80 ? 2.2 : pointCount > 45 ? 2.5 : 3;
+
+      els.chartSvgCumulative.setAttribute('viewBox', `0 0 ${svgWidth} ${height}`);
+      els.chartSvgCumulative.setAttribute('width', svgWidth);
+      els.chartSvgCumulative.setAttribute('height', height);
+      els.chartSvgCumulative.style.width = '100%';
+      els.chartSvgCumulative.style.height = '100%';
+
+      chartHoverGuideCumulative = svgEl('line', {
+        x1: left,
+        y1: top,
+        x2: left,
+        y2: top + innerH,
+        stroke: 'rgba(255,255,255,0.55)',
+        'stroke-width': '1.5',
+        'stroke-dasharray': '6 6',
+        style: 'display:none; pointer-events:none;'
+      });
+      els.chartSeriesCumulative.appendChild(chartHoverGuideCumulative);
+
+      for (let i = 0; i < 4; i += 1) {
+        const y = top + (innerH / 3) * i;
+        els.chartGridCumulative.appendChild(svgEl('line', { x1: left, y1: y, x2: svgWidth - right, y2: y, stroke: 'rgba(255,255,255,0.06)', 'stroke-width': '1' }));
+      }
+
+      let path = '';
+      let area = '';
+      const hoverHits = [];
+      data.forEach((d, idx) => {
+        const x = left + stepX * idx;
+        const y = top + innerH - (d.value / maxVal) * (innerH - 6);
+        path += `${idx === 0 ? 'M' : ' L'} ${x} ${y}`;
+        area += `${idx === 0 ? 'M' : ' L'} ${x} ${y}`;
+
+        const dot = svgEl('circle', {
+          cx: x,
+          cy: y,
+          r: markerRadius,
+          fill: cumulativeDotColor,
+          opacity: markerOpacity,
+          class: 'point-dot',
+          style: 'opacity:0;'
+        });
+        els.chartSeriesCumulative.appendChild(dot);
+
+        const hit = svgEl('rect', { x: x - stepX / 2, y: top, width: Math.max(stepX, 24), height: innerH + bottom, fill: 'transparent', class: 'hover-target' });
+        hit.addEventListener('mousemove', () => showCumulativeOverviewTooltip(d, { anchorX: x, anchorY: y, showGuide: true }));
+        hit.addEventListener('mouseleave', hideCumulativeOverviewTooltip);
+        hoverHits.push(hit);
+      });
+
+      const lastX = left + stepX * (data.length - 1);
+      area += ` L ${lastX} ${top + innerH} L ${left} ${top + innerH} Z`;
+
+      const areaEl = svgEl('path', { d: area.trim(), fill: cumulativeAreaColor, style: 'opacity:0; pointer-events:none;' });
+      els.chartSeriesCumulative.appendChild(areaEl);
+      const lineEl = svgEl('path', {
+        d: path.trim(),
+        fill: 'none',
+        stroke: cumulativeLineColor,
+        'stroke-width': String(lineWidth),
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        style: 'pointer-events:none;'
+      });
+      els.chartSeriesCumulative.appendChild(lineEl);
+
+      hoverHits.forEach(hit => els.chartSeriesCumulative.appendChild(hit));
+
+      const lastPoint = data[data.length - 1];
+      if (lastPoint) {
+        const lastXPoint = left + stepX * (data.length - 1);
+        const lastYPoint = top + innerH - (lastPoint.value / maxVal) * (innerH - 6);
+        const endValueText = chartMetric === 'piles'
+          ? `${Math.round(lastPoint.value).toLocaleString()}`
+          : `${Math.round(Number(lastPoint.value || 0)).toLocaleString()} ${metricUnit(chartMetric)}`;
+        const lastValueLabel = svgEl('text', {
+          x: Math.max(left + 8, lastXPoint - 12),
+          y: Math.max(top + 14, lastYPoint - 10),
+          class: 'point-label',
+          'text-anchor': 'end',
+          style: 'font-size:11px; font-weight:800; opacity:0;'
+        });
+        lastValueLabel.textContent = endValueText;
+        els.chartLabelsCumulative.appendChild(lastValueLabel);
+      }
+
+      // X axis labels: start/end only for a clean report look.
+      const startLabel = svgEl('text', { x: left, y: height - 18, class: 'axis-label', 'text-anchor': 'start' });
+      startLabel.textContent = formatDateLabel(data[0].date);
+      const endLabel = svgEl('text', { x: svgWidth - right, y: height - 18, class: 'axis-label', 'text-anchor': 'end' });
+      endLabel.textContent = formatDateLabel(data[data.length - 1].date);
+      els.chartXAxisCumulative.appendChild(startLabel);
+      els.chartXAxisCumulative.appendChild(endLabel);
+
+      const animatePath = (pathEl, duration = 560) => {
+        const length = pathEl.getTotalLength();
+        pathEl.style.strokeDasharray = `${length}`;
+        pathEl.style.strokeDashoffset = `${length}`;
+        pathEl.style.transition = `stroke-dashoffset ${duration}ms cubic-bezier(.22,.61,.36,1)`;
+        requestAnimationFrame(() => { pathEl.style.strokeDashoffset = '0'; });
+      };
+
+      const cumulativeDuration = Math.max(280, Math.min(520, 640 - pointCount * 3));
+      const pointStagger = Math.max(5, Math.min(14, 18 - pointCount * 0.12));
+      requestAnimationFrame(() => {
+        areaEl.style.transition = `opacity ${Math.max(180, cumulativeDuration - 120)}ms ease`;
+        areaEl.style.opacity = '1';
+        animatePath(lineEl, cumulativeDuration);
+        Array.from(els.chartLabelsCumulative.children).forEach((label, idx) => {
+          label.style.transition = 'opacity 180ms ease';
+          setTimeout(() => { label.style.opacity = '1'; }, 200 + idx * 40);
+        });
+        Array.from(els.chartSeriesCumulative.querySelectorAll('.point-dot')).forEach((dot, idx) => {
+          dot.style.transition = 'opacity 160ms ease';
+          setTimeout(() => { dot.style.opacity = String(markerOpacity); }, 140 + idx * pointStagger);
+        });
+      });
+    }
+
+    function renderOverviewActivityKpi(project = selectedProject) {
+      if (!els.overviewActivityKpiBody) return;
+      const activities = getOverviewKpiActivities(project);
+
+      const rowsHtml = [];
+      activities.forEach(activity => {
+        const isKingPosts = activity.kind === 'kingposts';
+        const isLinear = activity.kind === 'linear';
+        const isPiles = !isKingPosts && !isLinear;
+        const plotSuffix = activity.plotLabel ? ` · ${activity.plotLabel}` : '';
+        const label = `${activity.label}${plotSuffix}`;
+        const countUnit = activity.countUnit;
+        const dotClass = isKingPosts ? 'kingposts' : '';
+        const stats = isKingPosts ? computeKingPostStats(activity.rows) : computeStats(activity.rows, project);
+
+        const executed = isKingPosts ? (stats.predrilled ?? 0) : stats.completed;
+        const total = stats.total;
+        const remaining = Math.max(0, total - executed);
+        const pct = total ? (executed / total) * 100 : 0;
+
+        const yesterdayText = isPiles
+          ? `
+            <div class="overview-dual-metric">
+              <span><strong>${stats.yesterdayExecuted || 0}</strong><small>${escapeHtml(countUnit)}</small></span>
+              <span><strong>${(stats.yesterdayLm || 0).toFixed(1)}</strong><small>Lm</small></span>
+            </div>
+          `
+          : isLinear
+            ? `
+              <div class="overview-dual-metric">
+                <span><strong>${stats.yesterdayExecuted || 0}</strong><small>${escapeHtml(countUnit)}</small></span>
+                <span><strong>${(stats.yesterdayLm || 0).toFixed(1)}</strong><small>Lm</small></span>
+              </div>
+            `
+          : `
+            <div class="overview-dual-metric">
+              <span><strong>${stats.yesterdayPredrilled || 0}</strong><small>Kingpost</small></span>
+              <span><strong>${(stats.yesterdayKpLm || 0).toFixed(1)}</strong><small>Lm</small></span>
+            </div>
+          `;
+
+        const avgText = isPiles
+          ? (
+            isBoredPileElementType(activity.label)
+              ? `
+                <div class="overview-dual-metric">
+                  <span><strong>${(stats.avgPiles || 0).toFixed(1)}</strong><small>${escapeHtml(countUnit)}/CD</small></span>
+                  <span><strong>${(stats.avgLm || 0).toFixed(1)}</strong><small>Lm/CD</small></span>
+                </div>
+              `
+              : ``
+          )
+          : isLinear
+            ? `
+              <div class="overview-dual-metric">
+                <span><strong>${(stats.avgPiles || 0).toFixed(1)}</strong><small>${escapeHtml(countUnit)}/CD</small></span>
+                <span><strong>${(stats.avgLm || 0).toFixed(1)}</strong><small>Lm/CD</small></span>
+              </div>
+            `
+          : `
+            <div class="overview-dual-metric">
+              <span><strong>${(stats.avgPredrilled || 0).toFixed(1)}</strong><small>Kingpost/CD</small></span>
+              <span><strong>${(stats.avgLm || 0).toFixed(1)}</strong><small>Lm/CD</small></span>
+            </div>
+          `;
+
+        let etaDateLabel = '-';
+        let etaPeriodLabel = '-';
+        if (isPiles) {
+          if (isBoredPileElementType(activity.label) && stats.etaDate) {
+            etaDateLabel = formatDateLabel(stats.etaDate);
+            etaPeriodLabel = `${(stats.etaMonths ?? 0).toFixed(1)} mo`;
+          }
+        } else if (isLinear) {
+          if (stats.etaDate) {
+            etaDateLabel = formatDateLabel(stats.etaDate);
+            etaPeriodLabel = `${(stats.etaMonths ?? 0).toFixed(1)} mo`;
+          }
+        } else {
+          const rate = Number(stats.avgPredrilled || 0);
+          if (remaining > 0 && rate > 0) {
+            const workingDaysNeeded = Math.ceil(remaining / rate);
+            const etaDate = addWorkingDays(todayKey(), workingDaysNeeded);
+            const etaMonths = monthsBetween(todayKey(), etaDate);
+            etaDateLabel = formatDateLabel(etaDate);
+            etaPeriodLabel = `${etaMonths.toFixed(1)} mo`;
+          }
+        }
+
+        const etaText = isPiles && !isBoredPileElementType(activity.label)
+          ? ''
+          : `
+            <div class="overview-dual-metric overview-dual-metric--eta">
+              <span><strong>${etaDateLabel}</strong><small>Date</small></span>
+              <span><strong>${etaPeriodLabel}</strong><small>Period</small></span>
+            </div>
+          `;
+
+        rowsHtml.push(`
+          <tr>
+            <td data-kpi-col="activity"><span class="overview-activity-name"><span class="overview-activity-dot ${dotClass}"></span>${label}</span></td>
+            <td class="num" data-kpi-col="progress">
+              <div class="overview-progress-line">
+                <span>${executed.toLocaleString()} <small>/ ${total.toLocaleString()} (${remaining.toLocaleString()})</small></span>
+                <span>${pct.toFixed(1)}%</span>
+              </div>
+              <div class="overview-progress-bar"><span style="width:${pct.toFixed(2)}%"></span></div>
+            </td>
+            <td class="num overview-metric-cell" data-kpi-col="yesterday">${yesterdayText}</td>
+            <td class="num overview-metric-cell" data-kpi-col="avg">${avgText}</td>
+            <td class="num overview-metric-cell" data-kpi-col="eta">${etaText}</td>
+          </tr>
+        `);
+      });
+
+      els.overviewActivityKpiBody.innerHTML = rowsHtml.join('') || `<tr><td colspan="5" style="color:rgba(255,255,255,0.62); padding:12px;">No activity data for this scope.</td></tr>`;
+
+      const kpiTable = els.overviewActivityKpiBody.closest('.overview-activity-kpi');
+      if (kpiTable && !kpiTable.dataset.hoverBound) {
+        const setHover = col => {
+          kpiTable.querySelectorAll('[data-kpi-col]').forEach(cell => {
+            cell.classList.toggle('is-kpi-col-hover', !!col && cell.dataset.kpiCol === col);
+          });
+        };
+        kpiTable.addEventListener('mouseover', evt => {
+          const cell = evt.target.closest('[data-kpi-col]');
+          setHover(cell?.dataset?.kpiCol || '');
+        });
+        kpiTable.addEventListener('mouseleave', () => setHover(''));
+        kpiTable.dataset.hoverBound = '1';
+      }
+    }
+
+    function renderOverviewResourcesTable(project = selectedProject) {
+      if (!els.overviewResourcesBody) return;
+      const projectLabel = getCompanyProjectLabel(project);
+      const activeItems = (Array.isArray(equipmentRegistryRows) ? equipmentRegistryRows : [])
+        .filter(item => item.project === projectLabel && normalizeText(item.status).toLowerCase() === 'active');
+
+      const typeOrder = (t) => {
+        const k = t.toLowerCase();
+        if (k === 'rig') return 1;
+        if (k === 'crane') return 2;
+        return 3;
+      };
+
+      const rowsHtml = activeItems
+        .slice()
+        .sort((a, b) =>
+          typeOrder(normalizeText(a.type || 'Other')) - typeOrder(normalizeText(b.type || 'Other')) ||
+          normalizeText(a.type || 'Other').localeCompare(normalizeText(b.type || 'Other')) ||
+          normalizeText(a.contractor || '').localeCompare(normalizeText(b.contractor || '')) ||
+          normalizeText(a.label || '').localeCompare(normalizeText(b.label || ''))
+        )
+        .map(item => {
+          const ownership = normalizeText(item.contractor).toLowerCase() === 'apfc' ? 'Owned' : 'Rented';
+          const ownershipClass = ownership === 'Owned' ? 'owned' : 'rented';
+          return `
+            <tr>
+              <td>${escapeHtml(normalizeText(item.type) || 'Other')}</td>
+              <td><span class="overview-chip ${ownershipClass}">${ownership}</span></td>
+              <td>${escapeHtml(item.label || '-')}</td>
+            </tr>
+          `;
+        });
+
+      els.overviewResourcesBody.innerHTML = rowsHtml.join('') || `<tr><td colspan="3" style="color:rgba(255,255,255,0.62); padding:12px;">No active equipment records.</td></tr>`;
+    }
+
+    function renderOverviewRigUtilTable(project = selectedProject) {
+      if (!els.overviewRigUtilBody) return;
+      const proj = normalizeText(project);
+      const scopePlot = isAllPlotsValue(selectedPlot) ? '' : normalizeText(selectedPlot);
+      const filtered = rigProductionRows.filter(r => {
+        const projectMatch = !proj || isAllProjectsValue(proj) ? true : normalizeText(r.project) === proj;
+        const plotMatch = !scopePlot ? true : normalizeText(r.plot) === scopePlot;
+        return projectMatch && plotMatch;
+      });
+
+      const yesterday = previousDayKey();
+      const byRig = new Map();
+      filtered.forEach(row => {
+        const rig = normalizeText(row.rig) || '-';
+        if (!byRig.has(rig)) byRig.set(rig, { yHr: 0, yLm: 0, cHr: 0, cLm: 0, activeDays: new Set() });
+        const b = byRig.get(rig);
+        const hours = Math.max(0, (new Date(row.to) - new Date(row.from)) / 3600000);
+        const lm = Number(row.depth) || 0;
+        b.cHr += hours;
+        b.cLm += lm;
+        const dayKey = normalizeDateString(row.to || row.from);
+        if (dayKey) b.activeDays.add(dayKey);
+        if (dayKey === yesterday) {
+          b.yHr += hours;
+          b.yLm += lm;
+        }
+      });
+
+      const rowsHtml = Array.from(byRig.entries())
+        .sort((a, b) => b[1].cLm - a[1].cLm)
+        .map(([rig, v]) => {
+          const yUtil = v.yHr > 0 ? (v.yHr / 12) * 100 : 0;
+          const yLmHr = v.yHr > 0 ? v.yLm / v.yHr : 0;
+          const activeDays = v.activeDays?.size || 0;
+          const cUtil = activeDays > 0 ? (v.cHr / (activeDays * 12)) * 100 : 0;
+          const cLmHr = v.cHr > 0 ? v.cLm / v.cHr : 0;
+          return `
+          <tr>
+            <td>${escapeHtml(rig)}</td>
+            <td class="num">${formatNumberOneDecimal(v.yHr)}</td>
+            <td class="num">${formatNumberOneDecimal(v.yLm)}</td>
+            <td class="num">${formatNumberOneDecimal(yUtil)}%</td>
+            <td class="num">${formatNumberOneDecimal(yLmHr)}</td>
+            <td class="num">${formatNumberOneDecimal(v.cHr)}</td>
+            <td class="num">${formatNumberOneDecimal(v.cLm)}</td>
+            <td class="num">${formatNumberOneDecimal(cUtil)}%</td>
+            <td class="num">${formatNumberOneDecimal(cLmHr)}</td>
+          </tr>
+        `;
+        });
+
+      els.overviewRigUtilBody.innerHTML = rowsHtml.join('') || `<tr><td colspan="9" style="color:rgba(255,255,255,0.62); padding:12px;">No rig production windows found.</td></tr>`;
+    }
+
+    function renderOverviewManpowerSummary(project = selectedProject) {
+      if (!els.overviewManpowerPie || !els.overviewManpowerRank) return;
+      els.overviewManpowerPie.innerHTML = '';
+      const container = els.overviewManpowerRank;
+      container.innerHTML = '';
+
+      const projectLabel = getCompanyProjectLabel(project);
+      const employees = companyManpowerRows.map(sanitizeCompanyEmployee).filter(e => e.project === projectLabel);
+      if (!employees.length) {
+        container.innerHTML = `<div class="company-analytics-empty">No manpower records</div>`;
+        return;
+      }
+
+      const byGen = new Map();
+      employees.forEach(e => {
+        const gen = normalizeText(e.designation) || 'Other';
+        if (!byGen.has(gen)) byGen.set(gen, { count: 0, subs: new Map() });
+        const b = byGen.get(gen);
+        b.count += 1;
+        const sub = normalizeText(e.subDesignation) || '—';
+        b.subs.set(sub, (b.subs.get(sub) || 0) + 1);
+      });
+
+      const data = Array.from(byGen.entries()).map(([k, v]) => ({ key: k, count: v.count, subs: v.subs }))
+        .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+
+      renderCompanyAnalyticsPie(
+        els.overviewManpowerPie,
+        data.map(item => ({ label: item.key, value: item.count })),
+        {
+          centerLabel: 'Staff',
+          emptyLabel: 'No manpower records available.'
+        }
+      );
+
+      renderRankBars(
+        container,
+        data.map(item => ({ label: item.key, value: item.count })),
+        value => `${value} staff`,
+        'No manpower records'
+      );
+
+      Array.from(container.querySelectorAll('.company-rank-row')).forEach((rowEl, idx) => {
+        const item = data[idx];
+        if (!item) return;
+        const subs = Array.from(item.subs.entries())
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, 10)
+          .map(([label, value]) => ({ label, value: `${value} staff` }));
+        rowEl.addEventListener('mousemove', evt => {
+          showCompanyAnalyticsTooltip(evt, `${item.key} (${item.count})`, subs);
+        });
+        rowEl.addEventListener('mouseleave', hideCompanyAnalyticsTooltip);
+      });
     }
 
     function toggleMode() {
@@ -4231,7 +5022,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       els.pageSubtitle.textContent = getScopeSubtitle();
       els.kpiTotal.textContent = stats.total.toLocaleString();
       els.kpiExecuted.textContent = stats.completed.toLocaleString();
-      els.kpiRemaining.textContent = stats.remaining.toLocaleString();
+      if (els.kpiRemaining) els.kpiRemaining.textContent = stats.remaining.toLocaleString();
       els.kpiRigs.textContent = stats.activeRigs.toLocaleString();
       els.kpiAvg.textContent = stats.avgPiles ? stats.avgPiles.toLocaleString() + ' pile/d' : '0 pile/d';
       if (els.kpiAvgMetaL) els.kpiAvgMetaL.textContent = stats.avgLm ? stats.avgLm.toLocaleString() + ' Lm' : '0 Lm';
@@ -4243,7 +5034,11 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       els.kpiRemainingMetaR.textContent = `${(100 - stats.progress).toFixed(1)}%`;
       els.kpiEtaDays.textContent = stats.etaMonths !== null ? `${stats.etaMonths.toFixed(1)} mo` : 'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â';
       renderChart(rows, project);
-      renderExecutionMatrix(rows);
+      // Overview is now a scrollable report; keep the execution matrix hidden for now.
+      renderOverviewActivityKpi(project);
+      renderOverviewResourcesTable(project);
+      renderOverviewRigUtilTable(project);
+      renderOverviewManpowerSummary(project);
       if (activePage === 'production') renderProductionPage(project);
     }
 
@@ -4251,9 +5046,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       syncOverviewActivityMode(project);
       syncOverviewMetricButtons();
 
-      const rows = overviewActivityMode === 'kingposts'
-        ? getKingPostRowsForProject(project)
-        : getRowsForProject(project);
+      const rows = getOverviewModeRows(project);
       const avgBasisLabel = '7CD';
       const totalLabel = els.kpiTotal?.closest('.kpi-card')?.querySelector('.kpi-label');
       const executedLabel = els.kpiExecuted?.closest('.kpi-card')?.querySelector('.kpi-label');
@@ -4276,15 +5069,15 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
         els.kpiTotal.textContent = stats.total.toLocaleString();
         els.kpiExecuted.textContent = stats.predrilled.toLocaleString();
-        els.kpiRemaining.textContent = stats.completed.toLocaleString();
+        if (els.kpiRemaining) els.kpiRemaining.textContent = stats.completed.toLocaleString();
         els.kpiRigs.textContent = stats.activeRigs.toLocaleString();
         els.kpiAvg.textContent = stats.avgPredrilled ? `${stats.avgPredrilled.toLocaleString()} kp/d` : '0 kp/d';
         if (els.kpiTotalMetaL) els.kpiTotalMetaL.textContent = 'Design Qty';
         if (els.kpiTotalMetaR) els.kpiTotalMetaR.textContent = 'Live';
         if (els.kpiCompletedMetaL) els.kpiCompletedMetaL.textContent = `${stats.predrilled.toLocaleString()} ready to install`;
-        if (els.kpiCompletedMetaR) els.kpiCompletedMetaR.textContent = `${stats.yesterdayInstalled} installed yesterday`;
-        if (els.kpiRemainingMetaL) els.kpiRemainingMetaL.textContent = `${stats.progress.toFixed(1)}% complete`;
-        if (els.kpiRemainingMetaR) els.kpiRemainingMetaR.textContent = `${stats.remaining.toLocaleString()} remaining`;
+        if (els.kpiCompletedMetaR) els.kpiCompletedMetaR.textContent = `${stats.yesterdayInstalled} installed yesterday • ${stats.remaining.toLocaleString()} remaining`;
+        if (els.kpiRemainingMetaL) els.kpiRemainingMetaL.textContent = '';
+        if (els.kpiRemainingMetaR) els.kpiRemainingMetaR.textContent = '';
         if (els.kpiAvgMetaL) els.kpiAvgMetaL.textContent = stats.avgLm ? `${stats.avgLm.toLocaleString()} Lm` : '0 Lm';
         if (els.kpiAvgMeta) els.kpiAvgMeta.textContent = avgBasisLabel;
         els.kpiEta.textContent = stats.etaDate ? formatDateLabel(stats.etaDate) : '—';
@@ -4300,24 +5093,45 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       } else {
         const stats = computeStats(rows, project);
 
-        if (totalLabel) totalLabel.textContent = 'Total Piles';
-        if (executedLabel) executedLabel.textContent = 'Piles Completed';
-        if (remainingLabel) remainingLabel.textContent = 'Piles Remaining';
+        const totalTitle = overviewActivityMode === 'anchors'
+          ? 'Total Anchors'
+          : overviewActivityMode === 'secantpiles'
+            ? 'Total Secant Piles'
+            : 'Total Piles';
+        const completedTitle = overviewActivityMode === 'anchors'
+          ? 'Anchors Completed'
+          : overviewActivityMode === 'secantpiles'
+            ? 'Secant Piles Completed'
+            : 'Piles Completed';
+        const remainingTitle = overviewActivityMode === 'anchors'
+          ? 'Anchors Remaining'
+          : overviewActivityMode === 'secantpiles'
+            ? 'Secant Piles Remaining'
+            : 'Piles Remaining';
+        const avgUnit = overviewActivityMode === 'anchors'
+          ? 'anchor/d'
+          : overviewActivityMode === 'secantpiles'
+            ? 'secant/d'
+            : 'pile/d';
+
+        if (totalLabel) totalLabel.textContent = totalTitle;
+        if (executedLabel) executedLabel.textContent = completedTitle;
+        if (remainingLabel) remainingLabel.textContent = remainingTitle;
         if (rigsLabel) rigsLabel.textContent = 'Active Rigs';
         if (avgLabel) avgLabel.textContent = 'Avg Production (6WD)';
         if (etaLabel) etaLabel.textContent = 'Est Completion';
 
         els.kpiTotal.textContent = stats.total.toLocaleString();
         els.kpiExecuted.textContent = stats.completed.toLocaleString();
-        els.kpiRemaining.textContent = stats.remaining.toLocaleString();
+        if (els.kpiRemaining) els.kpiRemaining.textContent = stats.remaining.toLocaleString();
         els.kpiRigs.textContent = stats.activeRigs.toLocaleString();
-        els.kpiAvg.textContent = stats.avgPiles ? `${stats.avgPiles.toLocaleString()} pile/d` : '0 pile/d';
+        els.kpiAvg.textContent = stats.avgPiles ? `${stats.avgPiles.toLocaleString()} ${avgUnit}` : `0 ${avgUnit}`;
         if (els.kpiTotalMetaL) els.kpiTotalMetaL.textContent = 'Design Qty';
         if (els.kpiTotalMetaR) els.kpiTotalMetaR.textContent = 'Live';
         if (els.kpiCompletedMetaL) els.kpiCompletedMetaL.textContent = `${stats.progress.toFixed(1)}% executed`;
-        if (els.kpiCompletedMetaR) els.kpiCompletedMetaR.textContent = `${stats.yesterdayExecuted} yesterday`;
-        if (els.kpiRemainingMetaL) els.kpiRemainingMetaL.textContent = 'Remaining to execute';
-        if (els.kpiRemainingMetaR) els.kpiRemainingMetaR.textContent = `${(100 - stats.progress).toFixed(1)}%`;
+        if (els.kpiCompletedMetaR) els.kpiCompletedMetaR.textContent = `${stats.yesterdayExecuted} yesterday • ${stats.remaining} remaining`;
+        if (els.kpiRemainingMetaL) els.kpiRemainingMetaL.textContent = '';
+        if (els.kpiRemainingMetaR) els.kpiRemainingMetaR.textContent = '';
         if (els.kpiAvgMetaL) els.kpiAvgMetaL.textContent = stats.avgLm ? `${stats.avgLm.toLocaleString()} Lm` : '0 Lm';
         if (els.kpiAvgMeta) els.kpiAvgMeta.textContent = avgBasisLabel;
         els.kpiEta.textContent = stats.etaDate ? formatDateLabel(stats.etaDate) : '—';
@@ -4332,8 +5146,16 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         if (els.overviewMatrixHead4) els.overviewMatrixHead4.textContent = 'm3';
       }
 
+      // Split production visuals: daily bar chart + separate cumulative chart.
+      chartMode = 'daily';
       renderChart(rows, project);
-      renderExecutionMatrix(rows);
+      renderCumulativeChart(rows, project);
+
+      // Overview report sections
+      renderOverviewActivityKpi(project);
+      renderOverviewResourcesTable(project);
+      renderOverviewRigUtilTable(project);
+      renderOverviewManpowerSummary(project);
       if (activePage === 'production') renderProductionPage(project);
     }
 
@@ -4353,7 +5175,23 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         kingPostRows = [];
       }
 
-      if (!rawRows.length && !kingPostRows.length) {
+      try {
+        const anchorData = await fetchWorkerJson(DATA_FILE_KEYS.anchors);
+        anchorRows = extractAnchorList(anchorData);
+      } catch (err) {
+        console.error('Unable to load anchor source:', err);
+        anchorRows = [];
+      }
+
+      try {
+        const secantPileData = await fetchWorkerJson(DATA_FILE_KEYS.secantpiles);
+        secantPileRows = extractSecantPileList(secantPileData);
+      } catch (err) {
+        console.error('Unable to load secant pile source:', err);
+        secantPileRows = [];
+      }
+
+      if (!rawRows.length && !kingPostRows.length && !anchorRows.length && !secantPileRows.length) {
         throw new Error('No rows found in project sources');
       }
 
@@ -4375,7 +5213,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
       try {
         const equipmentData = await fetchWorkerJson(DATA_FILE_KEYS.equipment);
-        equipmentRegistryRows = extractEquipmentRegistryList(equipmentData);
+        equipmentRegistryRows = extractEquipmentRegistryList(equipmentData).map(sanitizeEquipmentRegistryRow);
       } catch (err) {
         console.error('Unable to load equipment registry source:', err);
         equipmentRegistryRows = [];
@@ -9731,13 +10569,16 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           });
         }
 
-        if (els.overviewActivityButtons?.length) {
-          els.overviewActivityButtons.forEach(btn => btn.addEventListener('click', () => {
+        if (els.overviewActivityToggle && !els.overviewActivityToggle.dataset.bound) {
+          els.overviewActivityToggle.addEventListener('click', evt => {
+            const btn = evt.target.closest('button[data-activity]');
+            if (!btn) return;
             overviewActivityMode = btn.dataset.activity || 'piles';
             syncOverviewActivityMode(selectedProject);
             syncOverviewMetricButtons();
             renderDashboard(selectedProject);
-          }));
+          });
+          els.overviewActivityToggle.dataset.bound = '1';
         }
 
         if (els.refreshDashboardBtn) {
@@ -9800,7 +10641,8 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         syncTopbarPageActions(activePage);
 
         els.granularityToggleButtons.forEach(btn => btn.addEventListener('click', () => setGranularity(btn.dataset.granularity)));
-        document.getElementById('modeToggle').addEventListener('click', toggleMode);
+        const modeToggleBtn = document.getElementById('modeToggle');
+        if (modeToggleBtn) modeToggleBtn.addEventListener('click', toggleMode);
         syncModeToggleUI();
         els.metricToggleButtons.forEach(btn => btn.addEventListener('click', () => setMetric(btn.dataset.metric)));
 

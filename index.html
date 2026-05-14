@@ -140,11 +140,6 @@
           <div class="kpi-meta"><span id="kpiCompletedMetaL">0.0% executed</span><span class="kpi-trend" id="kpiCompletedMetaR">0 yesterday</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Piles Remaining</div>
-          <div class="kpi-value" id="kpiRemaining">0</div>
-          <div class="kpi-meta"><span id="kpiRemainingMetaL">Remaining to execute</span><span class="kpi-trend" id="kpiRemainingMetaR">0%</span></div>
-        </div>
-        <div class="kpi-card">
           <div class="kpi-label">Active Rigs</div>
           <div class="kpi-value" id="kpiRigs">0</div>
         </div>
@@ -160,102 +155,191 @@
         </div>
       </section>
 
-      <section class="workspace">
-        <section class="page-view active" id="pageOverview">
-          <div class="panel hero">
-            <div class="panel-header">
-              <div>
-                <div class="panel-title">Production Chart</div>
-                <div class="panel-subtitle"></div>
-              </div>
-              <div class="panel-tag" id="heroVisualTag">Live</div>
-            </div>
-
-            <div class="hero-stage">
-              <div class="chart-shell">
-                <div class="chart-toolbar">
-                  <div class="toggle-group" id="overviewActivityToggle" hidden>
-                    <button class="chart-toggle active" data-activity="piles" type="button">Bored Piles</button>
-                    <button class="chart-toggle" data-activity="kingposts" type="button">KingPosts</button>
-                  </div>
-                  <div class="toggle-group" id="granularityToggleGroup">
-                    <button class="chart-toggle active" data-granularity="day" type="button">Day</button>
-                    <button class="chart-toggle" data-granularity="week" type="button">Week</button>
-                    <button class="chart-toggle" data-granularity="month" type="button">Month</button>
-                  </div>
-                  <div class="mode-switch" id="modeToggleGroup">
-                    <button class="ios-toggle" type="button" id="modeToggle" aria-label="Toggle cumulative mode" aria-pressed="false"></button>
-                    <span class="mode-switch-label" id="modeLabelCumulative">Cumulative</span>
-                  </div>
-                  <div class="toggle-group" id="metricToggleGroup">
-                    <button class="chart-toggle active" data-metric="piles" type="button">Piles</button>
-                    <button class="chart-toggle" data-metric="lm" type="button">Lm</button>
-                    <button class="chart-toggle" data-metric="m3" type="button">m3</button>
-                  </div>
-                </div>
-
-                <div class="chart-card">
-                  <div class="chart-header">
-                    <div>
-                      <div class="chart-title" id="chartTitle">Daily Piles</div>
-                      <div class="chart-subtitle" id="chartSubtitle"></div>
-                    </div>
-                    <div class="panel-tag" id="chartTag">Daily</div>
-                  </div>
-                  <div class="chart-canvas-wrap" id="chartWrap">
-                    <svg class="chart-svg" id="chartSvg" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet">
-                      <defs>
-                        <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stop-color="#8ef0bf" />
-                          <stop offset="55%" stop-color="#6ee7b7" stop-opacity="0.58" />
-                          <stop offset="100%" stop-color="#6ee7b7" stop-opacity="0.18" />
-                        </linearGradient>
-                      </defs>
-                      <g id="chartGrid"></g>
-                      <g id="chartSeries"></g>
-                      <g id="chartLabels"></g>
-                      <g id="chartXAxis"></g>
-                    </svg>
-                    <div class="chart-tooltip" id="chartTooltip"></div>
-                  </div>
-                  <div class="overview-series-legend" id="overviewSeriesLegend" hidden>
-                    <div class="overview-series-item">
-                      <span class="overview-series-line overview-series-line-actual"></span>
-                      <span>Cumulative Actual</span>
-                    </div>
-                    <div class="overview-series-item">
-                      <span class="overview-series-line overview-series-line-planned"></span>
-                      <span>Planned</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="exec-matrix">
-                <div class="matrix-head">
+        <section class="workspace">
+          <section class="page-view active" id="pageOverview">
+            <div class="report-stack" id="overviewReport">
+              <div class="panel report-card" id="overviewKpiPanel">
+                <div class="panel-header">
                   <div>
-                    <div class="matrix-title" id="overviewMatrixTitle">Executed Piles Matrix</div>
-                    <div class="matrix-subtitle"></div>
+                    <div class="panel-title">Activity KPIs</div>
                   </div>
-                  <div class="panel-tag" id="overviewMatrixTag">CW</div>
                 </div>
-                <div class="matrix-table-wrap">
-                  <table class="matrix-table">
-                    <thead>
-                      <tr>
-                        <th id="overviewMatrixHead1">CW / Date</th>
-                        <th id="overviewMatrixHead2">ID</th>
-                        <th class="num" id="overviewMatrixHead3">Lm</th>
-                        <th class="num" id="overviewMatrixHead4">m3</th>
-                      </tr>
-                    </thead>
-                    <tbody id="matrixBody"></tbody>
-                  </table>
+                <div class="report-body">
+                  <div class="overview-activity-kpi-wrap">
+                    <table class="overview-activity-kpi">
+                      <thead>
+                        <tr>
+                          <th data-kpi-col="activity">Activity</th>
+                          <th class="num" data-kpi-col="progress">Progress</th>
+                          <th class="num" data-kpi-col="yesterday">Yesterday</th>
+                          <th class="num" data-kpi-col="avg">Rolling AVG 7CD</th>
+                          <th class="num" data-kpi-col="eta">ETA</th>
+                        </tr>
+                      </thead>
+                      <tbody id="overviewActivityKpiBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel report-card" id="overviewProductionDailyPanel">
+                <div class="panel-header">
+                  <div>
+                    <div class="panel-title">Production</div>
+                    <div class="panel-subtitle">Daily production by activity</div>
+                  </div>
+                  <div class="panel-tag" id="heroVisualTag">Live</div>
+                </div>
+                <div class="report-body">
+                  <div class="chart-shell">
+                    <div class="chart-toolbar">
+                      <div class="toggle-group" id="overviewActivityToggle" hidden>
+                        <button class="chart-toggle active" data-activity="piles" type="button">Bored Piles</button>
+                        <button class="chart-toggle" data-activity="kingposts" type="button">KingPosts</button>
+                      </div>
+                      <div class="toggle-group" id="granularityToggleGroup">
+                        <button class="chart-toggle active" data-granularity="day" type="button">Day</button>
+                        <button class="chart-toggle" data-granularity="week" type="button">Week</button>
+                        <button class="chart-toggle" data-granularity="month" type="button">Month</button>
+                      </div>
+                      <div class="toggle-group" id="metricToggleGroup">
+                        <button class="chart-toggle active" data-metric="piles" type="button">Piles</button>
+                        <button class="chart-toggle" data-metric="lm" type="button">Lm</button>
+                        <button class="chart-toggle" data-metric="m3" type="button">m3</button>
+                      </div>
+                    </div>
+
+                    <div class="overview-production-grid">
+                      <div class="chart-card">
+                        <div class="chart-header">
+                          <div>
+                            <div class="chart-title" id="chartTitle">Daily Piles</div>
+                            <div class="chart-subtitle" id="chartSubtitle"></div>
+                          </div>
+                          <div class="panel-tag" id="chartTag">Daily</div>
+                        </div>
+                        <div class="chart-canvas-wrap" id="chartWrap">
+                          <svg class="chart-svg" id="chartSvg" viewBox="0 0 1000 420" preserveAspectRatio="xMidYMid meet">
+                            <defs>
+                              <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#8ef0bf" />
+                                <stop offset="55%" stop-color="#6ee7b7" stop-opacity="0.58" />
+                                <stop offset="100%" stop-color="#6ee7b7" stop-opacity="0.18" />
+                              </linearGradient>
+                              <linearGradient id="barGradientKingpost" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#93c5fd" />
+                                <stop offset="55%" stop-color="#60a5fa" stop-opacity="0.62" />
+                                <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.20" />
+                              </linearGradient>
+                            </defs>
+                            <g id="chartGrid"></g>
+                            <g id="chartSeries"></g>
+                            <g id="chartLabels"></g>
+                            <g id="chartXAxis"></g>
+                          </svg>
+                          <div class="chart-tooltip" id="chartTooltip"></div>
+                        </div>
+                      </div>
+
+                      <div class="chart-card overview-cumulative-card">
+                        <div class="chart-header">
+                          <div>
+                            <div class="chart-title" id="chartTitleCumulative">Cumulative</div>
+                            <div class="chart-subtitle" id="chartSubtitleCumulative"></div>
+                          </div>
+                          <div class="panel-tag" id="chartTagCumulative">Cumulative</div>
+                        </div>
+                        <div class="chart-canvas-wrap" id="chartWrapCumulative">
+                          <svg class="chart-svg" id="chartSvgCumulative" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet">
+                            <g id="chartGridCumulative"></g>
+                            <g id="chartSeriesCumulative"></g>
+                            <g id="chartLabelsCumulative"></g>
+                            <g id="chartXAxisCumulative"></g>
+                          </svg>
+                          <div class="chart-tooltip" id="chartTooltipCumulative"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="overview-two-col-grid">
+                <div class="panel report-card" id="overviewResourcesPanel">
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">Resources</div>
+                    </div>
+                    <div class="panel-tag">Fleet</div>
+                  </div>
+                  <div class="report-body">
+                    <div class="overview-table-wrap">
+                      <table class="overview-table overview-resources-table">
+                        <thead>
+                          <tr>
+                            <th>Type</th>
+                            <th>Ownership</th>
+                            <th>Unit</th>
+                          </tr>
+                        </thead>
+                        <tbody id="overviewResourcesBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="panel report-card" id="overviewRigUtilPanel">
+                  <div class="panel-header">
+                    <div>
+                      <div class="panel-title">Rig Utilization</div>
+                    </div>
+                    <div class="panel-tag">12 Hr</div>
+                  </div>
+                  <div class="report-body">
+                    <div class="overview-table-wrap">
+                      <table class="overview-table overview-rigutil-table">
+                        <thead>
+                          <tr>
+                            <th rowspan="2">Rig</th>
+                            <th class="num" colspan="4">Yesterday</th>
+                            <th class="num" colspan="4">Cumulative</th>
+                          </tr>
+                          <tr>
+                            <th class="num">Hr</th>
+                            <th class="num">Lm</th>
+                            <th class="num">Util %</th>
+                            <th class="num">Lm/Hr</th>
+                            <th class="num">Hr</th>
+                            <th class="num">Lm</th>
+                            <th class="num">Util %</th>
+                            <th class="num">Lm/Hr</th>
+                          </tr>
+                        </thead>
+                        <tbody id="overviewRigUtilBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel report-card" id="overviewManpowerPanel">
+                <div class="panel-header">
+                  <div>
+                    <div class="panel-title">Manpower</div>
+                  </div>
+                  <div class="panel-tag">HC</div>
+                </div>
+                <div class="report-body">
+                  <div class="overview-manpower-wrap">
+                    <div class="overview-manpower-grid">
+                      <div class="company-analytics-chart-wrap" id="overviewManpowerPie"></div>
+                      <div class="company-analytics-chart-wrap" id="overviewManpowerRank"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
         <section class="page-view" id="pageMap">
           <div class="map-page-shell">

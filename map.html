@@ -951,7 +951,8 @@
     const DATA_FILE_KEYS = {
       piles: 'piles',
       kingpost: 'kingpost',
-      anchors: 'anchors'
+      anchors: 'anchors',
+      secantpiles: 'secantpiles'
     };
     const BASE_STYLE_URL = 'mapbox://styles/yasseralsebaee/cmmfw9dvc00b001ra2h2f5vrw';
     const SAT_STYLE_OBJECT = {
@@ -1104,9 +1105,11 @@
     let allPiles = [];
     let allKingPosts = [];
     let allAnchors = [];
+    let allSecantPiles = [];
     let pileRecords = [];
     let kingPostRecords = [];
     let anchorRecords = [];
+    let secantPileRecords = [];
     let chartData = [];
     let SITE_CENTER = DEFAULT_SITE_CENTER;
     let pileLayer = null;
@@ -1184,10 +1187,12 @@
     }
 
     function hasScopedElements(scope) {
-      if (!scope) return (allPiles.length + allKingPosts.length) > 0;
+      if (!scope) return (allPiles.length + allKingPosts.length + allAnchors.length + allSecantPiles.length) > 0;
       const scopedPiles = allPiles.filter(row => matchesScope(row, scope));
       const scopedKingPosts = allKingPosts.filter(row => matchesScope(row, scope));
-      return scopedPiles.length > 0 || scopedKingPosts.length > 0;
+      const scopedAnchors = allAnchors.filter(row => matchesScope(row, scope));
+      const scopedSecants = allSecantPiles.filter(row => matchesScope(row, scope));
+      return scopedPiles.length > 0 || scopedKingPosts.length > 0 || scopedAnchors.length > 0 || scopedSecants.length > 0;
     }
 
     function getFocusedWidgetPiles() {
@@ -1394,6 +1399,65 @@
         if (Array.isArray(payload.items)) return payload.items;
       }
       return [];
+    }
+
+    function extractAnchorSourceRows(data) {
+      const payload = data?.body ?? data;
+      if (Array.isArray(payload)) return payload;
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.rows)) return payload.rows;
+        if (Array.isArray(payload.anchors)) return payload.anchors;
+        if (Array.isArray(payload.items)) return payload.items;
+        if (Array.isArray(payload.data)) return payload.data;
+      }
+      return [];
+    }
+
+    function extractSecantPileSourceRows(data) {
+      const payload = data?.body ?? data;
+      if (Array.isArray(payload)) return payload;
+      if (payload && typeof payload === 'object') {
+        if (Array.isArray(payload.rows)) return payload.rows;
+        if (Array.isArray(payload.secantpiles)) return payload.secantpiles;
+        if (Array.isArray(payload.secantPiles)) return payload.secantPiles;
+        if (Array.isArray(payload.items)) return payload.items;
+        if (Array.isArray(payload.data)) return payload.data;
+      }
+      return [];
+    }
+
+    function sanitizeAnchorRow(row) {
+      if (!row || typeof row !== 'object') return row;
+      const installationDate = normalizeDateString(
+        row.asbuilt_installationdate ||
+        row.asbuilt_InstallationDate
+      );
+      return {
+        ...row,
+        project: normalizeText(row.project || row.Project),
+        plot: normalizeText(row.plot || row.Plot),
+        isExecuted: !!installationDate,
+        installationDateKey: installationDate
+      };
+    }
+
+    function sanitizeSecantPileRow(row) {
+      if (!row || typeof row !== 'object') return row;
+      const drillingDate = normalizeDateString(
+        row.asbuilt_drillingdate ||
+        row.asbuilt_DrillingDate
+      );
+      return {
+        ...row,
+        project: normalizeText(row.project || row.Project),
+        plot: normalizeText(row.plot || row.Plot),
+        pileid: normalizeText(row.pileid || row.pileId || row.PileID),
+        type: normalizeText(row.type || row.Type || 'SecantPile'),
+        section: normalizeText(row.section || row.Section),
+        isExecuted: !!drillingDate,
+        castingDate: drillingDate,
+        drillingDateKey: drillingDate
+      };
     }
 
     function isExecutedRow(row) { return !!row.isExecuted; }
@@ -1703,6 +1767,29 @@
       return -(platform - topOfShoring) - 0.02;
     }
 
+    function getSecantPileTopZFromLevels(row) {
+      const topOfShoring = parseNumber(row?.design_topofshoring ?? row?.design_TopOfShoring);
+      if (!Number.isFinite(topOfShoring)) return -0.02;
+      // Follow the kingpost concept: secant piles visibly start from top of shoring.
+      // The secant source currently has no separate platform level, so top of shoring
+      // is treated as the map top reference.
+      return -0.02;
+    }
+
+    function getSecantPileHeight(row) {
+      const topOfShoring = parseNumber(row?.design_topofshoring ?? row?.design_TopOfShoring);
+      const toeLevel = parseNumber(row?.design_toelevel ?? row?.design_ToeLevel);
+      const height = Math.abs(topOfShoring - toeLevel);
+      return Math.max(height || 0, 0.5);
+    }
+
+    function getSecantTypeKey(row) {
+      const type = normalizeText(row?.type).toLowerCase();
+      if (type === 'primary') return 'primary';
+      if (type === 'secondary') return 'secondary';
+      return 'secant';
+    }
+
     function buildPileRecords(rows) {
       const latestExecutionKey = getLatestExecutionDateKey(rows);
       return rows.map((row, index) => {
@@ -1771,6 +1858,31 @@
       }).filter(Boolean);
     }
 
+    function buildSecantPileRecords(rows) {
+      const latestExecutionKey = getLatestExecutionDateKey(rows);
+      return (Array.isArray(rows) ? rows : []).map((row, index) => {
+        const lngLat = dltmToWgs84(row.design_x, row.design_y);
+        if (!lngLat) return null;
+        const id = normalizeId(row.pileid || row.pileId || row.id);
+        const diameterMm = parseNumber(row.diameter);
+        const actualRadius = diameterMm > 0 ? diameterMm / 2000 : 0.375;
+        return {
+          row,
+          id,
+          recordKey: buildMapRecordKey('secantpile', row, id, index),
+          elementType: 'secantpile',
+          secantType: getSecantTypeKey(row),
+          lngLat,
+          radiusM: Math.max(actualRadius, 0.18),
+          heightM: getSecantPileHeight(row),
+          topZ: getSecantPileTopZFromLevels(row),
+          color: getPileColor(row, latestExecutionKey),
+          executed: isExecutedRow(row),
+          executedYesterday: isYesterdayExecutedRow(row, latestExecutionKey)
+        };
+      }).filter(Boolean);
+    }
+
     function parseAngleDeg(value) {
       const n = parseNumber(value);
       return Number.isFinite(n) ? n : 0;
@@ -1797,32 +1909,43 @@
           bondLengthM: bondLength,
           horizontalDeg,
           verticalDeg,
-          strands
+          strands,
+          executed: !!row.isExecuted,
+          executedYesterday: false,
+          statusKey: row.isExecuted ? 'executed' : 'remaining'
         };
       }).filter(Boolean);
     }
 
     function getFocusedElementRecords(scope) {
       if (!scope) {
-        return [...pileRecords, ...kingPostRecords];
+        return [...pileRecords, ...kingPostRecords, ...anchorRecords, ...secantPileRecords];
       }
       const scopedPiles = allPiles.filter(row => matchesScope(row, scope));
       const scopedKingPosts = allKingPosts.filter(row => matchesScope(row, scope));
-      if (!scopedPiles.length && !scopedKingPosts.length) {
+      const scopedAnchors = allAnchors.filter(row => matchesScope(row, scope));
+      const scopedSecants = allSecantPiles.filter(row => matchesScope(row, scope));
+      if (!scopedPiles.length && !scopedKingPosts.length && !scopedAnchors.length && !scopedSecants.length) {
         const projectOnlyScope = { ...scope, plot: '' };
         const projectOnlyPiles = allPiles.filter(row => matchesScope(row, projectOnlyScope));
         const projectOnlyKingPosts = allKingPosts.filter(row => matchesScope(row, projectOnlyScope));
-        if (projectOnlyPiles.length || projectOnlyKingPosts.length) {
+        const projectOnlyAnchors = allAnchors.filter(row => matchesScope(row, projectOnlyScope));
+        const projectOnlySecants = allSecantPiles.filter(row => matchesScope(row, projectOnlyScope));
+        if (projectOnlyPiles.length || projectOnlyKingPosts.length || projectOnlyAnchors.length || projectOnlySecants.length) {
           return [
             ...buildPileRecords(projectOnlyPiles),
-            ...buildKingPostRecords(projectOnlyKingPosts)
+            ...buildKingPostRecords(projectOnlyKingPosts),
+            ...buildAnchorRecords(projectOnlyAnchors),
+            ...buildSecantPileRecords(projectOnlySecants)
           ];
         }
-        return [...pileRecords, ...kingPostRecords];
+        return [...pileRecords, ...kingPostRecords, ...anchorRecords, ...secantPileRecords];
       }
       return [
         ...buildPileRecords(scopedPiles),
-        ...buildKingPostRecords(scopedKingPosts)
+        ...buildKingPostRecords(scopedKingPosts),
+        ...buildAnchorRecords(scopedAnchors),
+        ...buildSecantPileRecords(scopedSecants)
       ];
     }
 
@@ -1830,16 +1953,19 @@
       const scope = getActiveScope();
       const scoped = [
         ...pileRecords.filter(record => matchesScope(record.row, scope)),
-        ...kingPostRecords.filter(record => matchesScope(record.row, scope))
+        ...kingPostRecords.filter(record => matchesScope(record.row, scope)),
+        ...secantPileRecords.filter(record => matchesScope(record.row, scope))
       ];
-      return scoped.length ? scoped : [...pileRecords, ...kingPostRecords];
+      return scoped.length ? scoped : [...pileRecords, ...kingPostRecords, ...secantPileRecords];
     }
 
     function getStrictScopedElementRecords() {
       const scope = getActiveScope();
       return [
         ...pileRecords.filter(record => matchesScope(record.row, scope)),
-        ...kingPostRecords.filter(record => matchesScope(record.row, scope))
+        ...kingPostRecords.filter(record => matchesScope(record.row, scope)),
+        ...anchorRecords.filter(record => matchesScope(record.row, scope)),
+        ...secantPileRecords.filter(record => matchesScope(record.row, scope))
       ];
     }
 
@@ -2275,6 +2401,8 @@
       const scopedRecords = getStrictScopedElementRecords();
       const pileCount = scopedRecords.filter(record => record.elementType === 'pile').length;
       const kingPostRecordsInScope = scopedRecords.filter(record => record.elementType === 'kingpost');
+      const anchorCount = scopedRecords.filter(record => record.elementType === 'anchor').length;
+      const secantCount = scopedRecords.filter(record => record.elementType === 'secantpile').length;
       const kingPostCount = kingPostRecordsInScope.length;
       const hasInstalledKingPosts = kingPostRecordsInScope.some(record => !!record.installed);
       const total = scopedRecords.length;
@@ -2286,9 +2414,13 @@
       }).length;
       const remaining = Math.max(0, total - executed);
       const percent = total ? (executed / total) * 100 : 0;
-      const subtitle = kingPostCount && !pileCount
+      const subtitle = kingPostCount && !pileCount && !anchorCount && !secantCount
         ? (hasInstalledKingPosts ? 'Installed elements vs total elements' : 'Pre-drilled elements vs total elements')
-        : (pileCount && kingPostCount ? 'Completed elements vs total elements' : 'Executed piles vs total piles');
+        : ((pileCount && !kingPostCount && !anchorCount && !secantCount)
+          ? 'Executed piles vs total piles'
+          : ((secantCount && !pileCount && !kingPostCount && !anchorCount)
+            ? 'Executed secant piles vs total secant piles'
+            : 'Completed elements vs total elements'));
       const radius = 40;
       const circumference = 2 * Math.PI * radius;
       const offset = circumference * (1 - percent / 100);
@@ -3167,9 +3299,39 @@
       sidePanel.classList.add('open');
     }
 
+    function openSecantPilePanel(record) {
+      const row = record.row;
+      panelTitle.textContent = `${row.pileid || 'Secant Pile'} • ${row.type || 'Secant Pile'}`;
+      panelBody.innerHTML = `
+        ${makeInfoSection('General', [
+          ['Element ID', row.pileid || '-'],
+          ['Type', row.type || '-'],
+          ['Project', row.project || '-'],
+          ['Plot', row.plot || '—'],
+          ['Section', row.section || '—']
+        ])}
+        ${makeInfoSection('Design', [
+          ['Diameter (mm)', displayValue(row.diameter, 0)],
+          ['X', displayFixed(row.design_x, 3)],
+          ['Y', displayFixed(row.design_y, 3)],
+          ['Top Of Shoring', displaySigned(row.design_topofshoring, 2)],
+          ['Toe Level', displaySigned(row.design_toelevel, 2)],
+          ['Depth', `${displayValue(getSecantPileHeight(row), 2)} m`]
+        ])}
+        ${makeInfoSection('Asbuilt', [
+          ['Status', record.executedYesterday ? 'Executed Last Shift' : (record.executed ? 'Executed' : 'Pending')],
+          ['Drilling Date', row.castingDate ? formatDateTime(row.castingDate) : '—']
+        ])}`;
+      sidePanel.classList.add('open');
+    }
+
     function openMapElementPanel(record) {
       if (record?.elementType === 'kingpost') {
         openKingPostPanel(record);
+        return;
+      }
+      if (record?.elementType === 'secantpile') {
+        openSecantPilePanel(record);
         return;
       }
       openPilePanel(record);
@@ -3182,6 +3344,11 @@
     }
     function getPileBaseColor(record) {
       const stateKey = getPileStateKey(record);
+      if (record?.elementType === 'secantpile' && record?.secantType === 'secondary') {
+        if (stateKey === 'yesterday') return 0xffddb0;
+        if (stateKey === 'executed') return 0xc5f9dc;
+        return isSatellite ? 0xf2f6fb : 0xd9e1ea;
+      }
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterday;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executed;
       // Remaining piles: use a darker neutral in Street to distinguish from kingposts,
@@ -3190,6 +3357,11 @@
     }
     function getPileBaseEmissive(record) {
       const stateKey = getPileStateKey(record);
+      if (record?.elementType === 'secantpile' && record?.secantType === 'secondary') {
+        if (stateKey === 'yesterday') return 0xffc884;
+        if (stateKey === 'executed') return 0x95efc0;
+        return isSatellite ? 0xcbd6e2 : 0x9aa9b9;
+      }
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterdayEmissive;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executedEmissive;
       return isSatellite ? MAP_PREMIUM.colors.remainingSatelliteEmissive : MAP_PREMIUM.colors.remainingStreetEmissive;
@@ -3225,10 +3397,16 @@
         opacity: getNormalOpacity(record)
       };
     }
+
+    function getCylinderSegmentsForRecord(record) {
+      if (record?.elementType === 'secantpile') return PILE_SEGMENTS;
+      return PILE_SEGMENTS;
+    }
+
     function createPileDisplayMesh(record, localX, localY, visualMode = 'normal', isThreeDimensional = false) {
       const visual = getPileInteractiveVisual(record, visualMode);
       const effectiveOpacity = Math.max(0.05, Math.min(1, Number(visual.opacity) || 1));
-      const geometry = new THREE.CylinderGeometry(record.radiusM, record.radiusM, record.heightM, PILE_SEGMENTS, 1, false);
+      const geometry = new THREE.CylinderGeometry(record.radiusM, record.radiusM, record.heightM, getCylinderSegmentsForRecord(record), 1, false);
       geometry.rotateX(Math.PI / 2);
       const material = new THREE.MeshPhongMaterial({
         color: visual.color,
@@ -3667,6 +3845,56 @@
           this.meshes.push(instancedMesh);
         });
 
+        const secantBuckets = new Map();
+        secantPileRecords.forEach(record => {
+          const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
+          const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
+          const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
+          const radius = record.radiusM;
+          const height = record.heightM;
+          const topZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
+          record._local3d = { x: localX, y: localY, zCenter: topZ - (height / 2), height, effectiveHeight: height, radius, topZ };
+          const bucketKey = `${record.secantType || 'secant'}|${getPileStateKey(record)}`;
+          if (!secantBuckets.has(bucketKey)) secantBuckets.set(bucketKey, []);
+          secantBuckets.get(bucketKey).push(record);
+        });
+
+        secantBuckets.forEach(records => {
+          const sampleRecord = records[0];
+          if (!sampleRecord) return;
+          const geometry = new THREE.CylinderGeometry(1, 1, 1, getCylinderSegmentsForRecord(sampleRecord), 1, false);
+          geometry.rotateX(Math.PI / 2);
+          const visual = getPileInteractiveVisual(sampleRecord, 'normal');
+          const material = new THREE.MeshPhongMaterial({
+            color: visual.color,
+            transparent: visual.opacity < 0.999,
+            opacity: Math.max(0.05, Math.min(1, Number(visual.opacity) || 1)),
+            shininess: sampleRecord.secantType === 'secondary' ? 132 : 152,
+            specular: sampleRecord.secantType === 'secondary' ? 0xd8e0ea : 0xf4f7fb,
+            flatShading: sampleRecord.secantType === 'secondary',
+            side: THREE.DoubleSide,
+            depthTest: true,
+            depthWrite: true
+          });
+          material.emissive = new THREE.Color(visual.emissive);
+          material.emissiveIntensity = visual.emissiveIntensity;
+          const instancedMesh = new THREE.InstancedMesh(geometry, material, records.length);
+          instancedMesh.userData.records = records;
+          instancedMesh.userData.elementType = 'secantpile-instanced';
+          instancedMesh.frustumCulled = false;
+          instancedMesh.renderOrder = 999;
+          records.forEach((record, index) => {
+            tempPosition.set(record._local3d.x, record._local3d.y, record._local3d.zCenter);
+            tempScale.set(record.radiusM, record.radiusM, record.heightM);
+            tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+            instancedMesh.setMatrixAt(index, tempMatrix);
+          });
+          instancedMesh.instanceMatrix.needsUpdate = true;
+          this.rootGroup.add(instancedMesh);
+          this.pileInstanceMeshes.push(instancedMesh);
+          this.meshes.push(instancedMesh);
+        });
+
         const kingPostBuckets = new Map();
         kingPostRecords.forEach(record => {
           const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
@@ -3737,157 +3965,166 @@
         if (Array.isArray(anchorSet) && anchorSet.length) {
           const unitGeom = new THREE.CylinderGeometry(1, 1, 1, 18, 1, false);
           unitGeom.rotateX(Math.PI / 2); // align along local +Z
+          const anchorBuckets = {
+            remaining: anchorSet.filter(record => !record.executed),
+            executed: anchorSet.filter(record => !!record.executed)
+          };
 
-          const freeMat = new THREE.MeshPhongMaterial({
-            // Brighter cyan so it reads on satellite imagery.
-            color: 0xcdf7ff,
-            transparent: true,
-            opacity: 0.76,
-            shininess: 120,
-            specular: 0xffffff,
-            depthTest: true,
-            depthWrite: true
-          });
-          freeMat.emissive = new THREE.Color(0x2aa7b8);
-          freeMat.emissiveIntensity = 0.28;
+          const createAnchorMaterials = stateKey => {
+            const isExecuted = stateKey === 'executed';
+            const freeMat = new THREE.MeshPhongMaterial({
+              color: isExecuted ? 0x83f5bf : 0xcdf7ff,
+              transparent: true,
+              opacity: isExecuted ? 0.82 : 0.7,
+              shininess: 120,
+              specular: 0xffffff,
+              depthTest: true,
+              depthWrite: true
+            });
+            freeMat.emissive = new THREE.Color(isExecuted ? 0x17c969 : 0x2aa7b8);
+            freeMat.emissiveIntensity = isExecuted ? 0.26 : 0.28;
 
-          const freeGlowMat = new THREE.MeshBasicMaterial({
-            color: 0xe9fdff,
-            transparent: true,
-            opacity: this.isSatelliteMode ? 0.24 : 0.14,
-            depthTest: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
-          });
+            const freeGlowMat = new THREE.MeshBasicMaterial({
+              color: isExecuted ? 0xb8ffe0 : 0xe9fdff,
+              transparent: true,
+              opacity: this.isSatelliteMode ? (isExecuted ? 0.2 : 0.24) : (isExecuted ? 0.11 : 0.14),
+              depthTest: true,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending
+            });
 
-          const bondMat = new THREE.MeshPhongMaterial({
-            // Light neutral so it reads on satellite imagery.
-            color: 0xe4eaf2,
-            transparent: true,
-            opacity: 0.86,
-            shininess: 130,
-            specular: 0xffffff,
-            depthTest: true,
-            depthWrite: true
-          });
-          bondMat.emissive = new THREE.Color(0x5b7896);
-          bondMat.emissiveIntensity = 0.22;
+            const bondMat = new THREE.MeshPhongMaterial({
+              color: isExecuted ? 0x39d884 : 0xe4eaf2,
+              transparent: true,
+              opacity: isExecuted ? 0.9 : 0.84,
+              shininess: 130,
+              specular: 0xffffff,
+              depthTest: true,
+              depthWrite: true
+            });
+            bondMat.emissive = new THREE.Color(isExecuted ? 0x0fa85a : 0x5b7896);
+            bondMat.emissiveIntensity = isExecuted ? 0.24 : 0.22;
 
-          // Subtle "readability glow" for satellite: additive, slightly larger than the bond body.
-          const bondGlowMat = new THREE.MeshBasicMaterial({
-            color: 0xf1f6ff,
-            transparent: true,
-            opacity: this.isSatelliteMode ? 0.22 : 0.14,
-            depthTest: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending
-          });
+            const bondGlowMat = new THREE.MeshBasicMaterial({
+              color: isExecuted ? 0xc8ffe4 : 0xf1f6ff,
+              transparent: true,
+              opacity: this.isSatelliteMode ? (isExecuted ? 0.18 : 0.22) : (isExecuted ? 0.1 : 0.14),
+              depthTest: true,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending
+            });
 
-          const freeMesh = new THREE.InstancedMesh(unitGeom, freeMat, anchorSet.length);
-          freeMesh.userData.elementType = 'anchor-free-instanced';
-          freeMesh.frustumCulled = false;
-          freeMesh.renderOrder = 997;
-
-          const freeGlowMesh = new THREE.InstancedMesh(unitGeom, freeGlowMat, anchorSet.length);
-          freeGlowMesh.userData.elementType = 'anchor-free-glow-instanced';
-          freeGlowMesh.frustumCulled = false;
-          freeGlowMesh.renderOrder = 996;
-
-          const bondMesh = new THREE.InstancedMesh(unitGeom, bondMat, anchorSet.length);
-          bondMesh.userData.elementType = 'anchor-bond-instanced';
-          bondMesh.frustumCulled = false;
-          bondMesh.renderOrder = 994;
-
-          const bondGlowMesh = new THREE.InstancedMesh(unitGeom, bondGlowMat, anchorSet.length);
-          bondGlowMesh.userData.elementType = 'anchor-bond-glow-instanced';
-          bondGlowMesh.frustumCulled = false;
-          bondGlowMesh.renderOrder = 993;
+            return { freeMat, freeGlowMat, bondMat, bondGlowMat };
+          };
 
           const baseAxis = new THREE.Vector3(0, 0, 1);
-          let freeCount = 0;
-          let bondCount = 0;
-          let bondGlowCount = 0;
-          let freeGlowCount = 0;
-          anchorSet.forEach((record, index) => {
-            const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
-            const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
-            const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
+          Object.entries(anchorBuckets).forEach(([stateKey, records]) => {
+            if (!records.length) return;
+            const { freeMat, freeGlowMat, bondMat, bondGlowMat } = createAnchorMaterials(stateKey);
+            const freeMesh = new THREE.InstancedMesh(unitGeom, freeMat, records.length);
+            freeMesh.userData.elementType = 'anchor-free-instanced';
+            freeMesh.frustumCulled = false;
+            freeMesh.renderOrder = 997;
 
-            // Angles:
-            // - horizontalDeg: plan azimuth (clockwise from North) to rotate the anchor direction
-            // - verticalDeg: inclination down from horizontal (0 = horizontal, 90 = vertical down)
-            const bearingRad = (Number(record.horizontalDeg) || 0) * (Math.PI / 180);
-            const tiltRad = (Number(record.verticalDeg) || 0) * (Math.PI / 180);
-            const horiz = Math.cos(tiltRad);
-            // Local axes: +X east, +Y north, +Z up. Anchor goes "into ground" => negative Z.
-            const dir = new THREE.Vector3(
-              Math.sin(bearingRad) * horiz,
-              Math.cos(bearingRad) * horiz,
-              -Math.sin(tiltRad)
-            );
-            if (dir.lengthSq() < 1e-10) dir.set(0, 0, -1);
-            dir.normalize();
-            const quat = new THREE.Quaternion().setFromUnitVectors(baseAxis, dir);
+            const freeGlowMesh = new THREE.InstancedMesh(unitGeom, freeGlowMat, records.length);
+            freeGlowMesh.userData.elementType = 'anchor-free-glow-instanced';
+            freeGlowMesh.frustumCulled = false;
+            freeGlowMesh.renderOrder = 996;
 
-            const startZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
-            const start = new THREE.Vector3(localX, localY, startZ);
+            const bondMesh = new THREE.InstancedMesh(unitGeom, bondMat, records.length);
+            bondMesh.userData.elementType = 'anchor-bond-instanced';
+            bondMesh.frustumCulled = false;
+            bondMesh.renderOrder = 994;
 
-            const freeLen = Math.max(0, Number(record.freeLengthM) || 0);
-            const bondLen = Math.max(0, Number(record.bondLengthM) || 0);
+            const bondGlowMesh = new THREE.InstancedMesh(unitGeom, bondGlowMat, records.length);
+            bondGlowMesh.userData.elementType = 'anchor-bond-glow-instanced';
+            bondGlowMesh.frustumCulled = false;
+            bondGlowMesh.renderOrder = 993;
 
-            const strands = Math.max(0, Number(record.strands) || 0);
-            // Make anchors visually readable (both free + bond). Slightly scale with strand count.
-            const radius = Math.max(0.11, 0.095 + Math.min(10, strands) * 0.008);
+            let freeCount = 0;
+            let bondCount = 0;
+            let bondGlowCount = 0;
+            let freeGlowCount = 0;
+            records.forEach(record => {
+              const merc = mapboxgl.MercatorCoordinate.fromLngLat(record.lngLat, 0);
+              const localX = (merc.x - this.centerMerc.x) / this.modelTransform.scale;
+              const localY = (merc.y - this.centerMerc.y) / this.modelTransform.scale;
 
-            if (freeLen > 0.05) {
-              const center = start.clone().add(dir.clone().multiplyScalar(freeLen / 2));
-              tempPosition.copy(center);
-              tempScale.set(radius, radius, freeLen);
-              tempQuaternion.copy(quat);
-              tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
-              freeMesh.setMatrixAt(freeCount, tempMatrix);
-              freeCount += 1;
+              // Angles:
+              // - horizontalDeg: plan azimuth (clockwise from North) to rotate the anchor direction
+              // - verticalDeg: inclination down from horizontal (0 = horizontal, 90 = vertical down)
+              const bearingRad = (Number(record.horizontalDeg) || 0) * (Math.PI / 180);
+              const tiltRad = (Number(record.verticalDeg) || 0) * (Math.PI / 180);
+              const horiz = Math.cos(tiltRad);
+              // Local axes: +X east, +Y north, +Z up. Anchor goes "into ground" => negative Z.
+              const dir = new THREE.Vector3(
+                Math.sin(bearingRad) * horiz,
+                Math.cos(bearingRad) * horiz,
+                -Math.sin(tiltRad)
+              );
+              if (dir.lengthSq() < 1e-10) dir.set(0, 0, -1);
+              dir.normalize();
+              const quat = new THREE.Quaternion().setFromUnitVectors(baseAxis, dir);
 
-              tempScale.set(radius * 1.55, radius * 1.55, freeLen);
-              tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
-              freeGlowMesh.setMatrixAt(freeGlowCount, tempMatrix);
-              freeGlowCount += 1;
-            }
+              const startZ = Number.isFinite(Number(record.topZ)) ? Number(record.topZ) : -0.02;
+              const start = new THREE.Vector3(localX, localY, startZ);
 
-            if (bondLen > 0.05) {
-              const center = start.clone().add(dir.clone().multiplyScalar(freeLen + bondLen / 2));
-              tempPosition.copy(center);
-              // Make bonding length visually heavier than free length.
-              tempScale.set(radius * 2.0, radius * 2.0, bondLen);
-              tempQuaternion.copy(quat);
-              tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
-              bondMesh.setMatrixAt(bondCount, tempMatrix);
-              bondCount += 1;
+              const freeLen = Math.max(0, Number(record.freeLengthM) || 0);
+              const bondLen = Math.max(0, Number(record.bondLengthM) || 0);
 
-              tempScale.set(radius * 2.28, radius * 2.28, bondLen);
-              tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
-              bondGlowMesh.setMatrixAt(bondGlowCount, tempMatrix);
-              bondGlowCount += 1;
-            }
+              const strands = Math.max(0, Number(record.strands) || 0);
+              // Make anchors visually readable (both free + bond). Slightly scale with strand count.
+              const radius = Math.max(0.11, 0.095 + Math.min(10, strands) * 0.008);
 
-            record._local3d = { x: localX, y: localY, topZ: startZ };
+              if (freeLen > 0.05) {
+                const center = start.clone().add(dir.clone().multiplyScalar(freeLen / 2));
+                tempPosition.copy(center);
+                tempScale.set(radius, radius, freeLen);
+                tempQuaternion.copy(quat);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                freeMesh.setMatrixAt(freeCount, tempMatrix);
+                freeCount += 1;
+
+                tempScale.set(radius * 1.55, radius * 1.55, freeLen);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                freeGlowMesh.setMatrixAt(freeGlowCount, tempMatrix);
+                freeGlowCount += 1;
+              }
+
+              if (bondLen > 0.05) {
+                const center = start.clone().add(dir.clone().multiplyScalar(freeLen + bondLen / 2));
+                tempPosition.copy(center);
+                // Make bonding length visually heavier than free length.
+                tempScale.set(radius * 2.0, radius * 2.0, bondLen);
+                tempQuaternion.copy(quat);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                bondMesh.setMatrixAt(bondCount, tempMatrix);
+                bondCount += 1;
+
+                tempScale.set(radius * 2.28, radius * 2.28, bondLen);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                bondGlowMesh.setMatrixAt(bondGlowCount, tempMatrix);
+                bondGlowCount += 1;
+              }
+
+              record._local3d = { x: localX, y: localY, topZ: startZ };
+            });
+
+            freeMesh.count = freeCount;
+            bondMesh.count = bondCount;
+            bondGlowMesh.count = bondGlowCount;
+            freeGlowMesh.count = freeGlowCount;
+            freeMesh.instanceMatrix.needsUpdate = true;
+            bondMesh.instanceMatrix.needsUpdate = true;
+            bondGlowMesh.instanceMatrix.needsUpdate = true;
+            freeGlowMesh.instanceMatrix.needsUpdate = true;
+
+            this.rootGroup.add(bondGlowMesh);
+            this.rootGroup.add(bondMesh);
+            this.rootGroup.add(freeGlowMesh);
+            this.rootGroup.add(freeMesh);
+            this.anchorInstanceMeshes.push(bondGlowMesh, bondMesh, freeGlowMesh, freeMesh);
           });
-
-          freeMesh.count = freeCount;
-          bondMesh.count = bondCount;
-          bondGlowMesh.count = bondGlowCount;
-          freeGlowMesh.count = freeGlowCount;
-          freeMesh.instanceMatrix.needsUpdate = true;
-          bondMesh.instanceMatrix.needsUpdate = true;
-          bondGlowMesh.instanceMatrix.needsUpdate = true;
-          freeGlowMesh.instanceMatrix.needsUpdate = true;
-
-          // Order: glows first, then solids.
-          this.rootGroup.add(bondGlowMesh);
-          this.rootGroup.add(bondMesh);
-          this.rootGroup.add(freeGlowMesh);
-          this.rootGroup.add(freeMesh);
-          this.anchorInstanceMeshes.push(bondGlowMesh, bondMesh, freeGlowMesh, freeMesh);
         }
         this.syncPileOverlayMeshes();
         this.applySatelliteMode(this.isSatelliteMode);
@@ -3916,6 +4153,7 @@
       getRecordByKey(recordKey) {
         if (!recordKey) return null;
         return pileRecords.find(record => record.recordKey === recordKey)
+          || secantPileRecords.find(record => record.recordKey === recordKey)
           || kingPostRecords.find(record => record.recordKey === recordKey)
           || null;
       }
@@ -4337,7 +4575,7 @@
         typeEl.className = 'pile-label-type';
         typeEl.textContent = !showType || record.elementType === 'kingpost'
           ? ''
-          : (record.row.pileType || '');
+          : (record.elementType === 'secantpile' ? (record.row.type || '') : (record.row.pileType || ''));
 
         content.appendChild(idEl);
         content.appendChild(typeEl);
@@ -4391,20 +4629,34 @@
       let anchorRows = [];
       try {
         const anchorsData = await fetchWorkerJson(DATA_FILE_KEYS.anchors);
-        anchorRows = Array.isArray(anchorsData) ? anchorsData : (anchorsData?.rows || anchorsData?.data || []);
+        const rows = extractAnchorSourceRows(anchorsData);
+        anchorRows = rows.map(sanitizeAnchorRow);
       } catch (err) {
         console.warn('Anchor source load skipped:', err);
         anchorRows = [];
+      }
+      let secantRows = [];
+      try {
+        const secantData = await fetchWorkerJson(DATA_FILE_KEYS.secantpiles);
+        const rows = extractSecantPileSourceRows(secantData);
+        secantRows = rows.map(sanitizeSecantPileRow);
+      } catch (err) {
+        console.warn('Secant pile source load skipped:', err);
+        secantRows = [];
       }
       const rawPiles = extractPileList(pileData);
       allPiles = rawPiles;
       allKingPosts = kingPostRows;
       allAnchors = anchorRows;
+      allSecantPiles = secantRows;
       pileRecords = buildPileRecords(allPiles);
       kingPostRecords = buildKingPostRecords(allKingPosts);
       anchorRecords = buildAnchorRecords(allAnchors);
+      secantPileRecords = buildSecantPileRecords(allSecantPiles);
+      if (anchorRecords.length) console.info(`[APFC] Anchors loaded: ${anchorRecords.length}`);
+      if (secantPileRecords.length) console.info(`[APFC] Secant piles loaded: ${secantPileRecords.length}`);
       chartData = aggregateDailyData(allPiles);
-      SITE_CENTER = getRecordCentroid([...pileRecords, ...kingPostRecords, ...anchorRecords]);
+      SITE_CENTER = getRecordCentroid([...pileRecords, ...kingPostRecords, ...anchorRecords, ...secantPileRecords]);
       map.setCenter(SITE_CENTER);
       if (!pileLayer) {
         pileLayer = new ThreePileLayer('threejs-piles');
@@ -4583,7 +4835,7 @@
           }
           try {
             const scope = getActiveScope();
-            if ((!allPiles.length && !allKingPosts.length) || !hasScopedElements(scope)) {
+            if ((!allPiles.length && !allKingPosts.length && !allAnchors.length && !allSecantPiles.length) || !hasScopedElements(scope)) {
               loadMapDataForCurrentScope().catch(err => {
                 console.error(err);
                 panelTitle.textContent = 'Load error';
@@ -4592,9 +4844,11 @@
               });
               return;
             }
-          if (allPiles.length || allKingPosts.length) {
+          if (allPiles.length || allKingPosts.length || allAnchors.length || allSecantPiles.length) {
               pileRecords = buildPileRecords(allPiles);
               kingPostRecords = buildKingPostRecords(allKingPosts);
+              anchorRecords = buildAnchorRecords(allAnchors);
+              secantPileRecords = buildSecantPileRecords(allSecantPiles);
               chartData = aggregateDailyData(allPiles);
               if (pileLayer) {
                 pileLayer.buildPiles();
