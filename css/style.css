@@ -5329,22 +5329,36 @@ body.auth-locked .auth-shell {
 .utilization-legend-toolbar {
   justify-content: flex-end;
   padding: 0;
-  gap: 10px;
+  gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.utilization-legend-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .utilization-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 8px;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-size: 7.5px;
   font-weight: 700;
   color: rgba(244,247,251,0.8);
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .utilization-legend-swatch {
-  width: 18px;
+  width: 14px;
   height: 3px;
   border-radius: 999px;
   display: inline-block;

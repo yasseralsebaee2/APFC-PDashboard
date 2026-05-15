@@ -3418,7 +3418,9 @@
       if (els.pageCompanyAnalytics) els.pageCompanyAnalytics.classList.toggle('active', page === 'companyanalytics');
       els.pageTimeline.classList.toggle('active', page === 'timeline');
       if (els.pageCost) els.pageCost.classList.toggle('active', page === 'cost');
-      els.kpiRow.style.display = page === 'overview' ? 'grid' : 'none';
+      if (els.kpiRow) {
+        els.kpiRow.style.display = 'none';
+      }
       document.querySelector('.content')?.classList.toggle('production-mode', page === 'production');
 
       syncTopbarPageActions(page);
@@ -7050,6 +7052,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const maxVal = Math.max(...rows.map(r => r.total), 1);
       const scaleY = innerH / maxVal;
       svg.setAttribute('viewBox', `0 0 ${chartW} ${chartH}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
       if (wrap) {
         wrap.classList.toggle('equipment-chart-wrap-scrollable', isScrollable);
         wrap.style.overflowX = isScrollable ? 'auto' : 'hidden';
@@ -8303,6 +8306,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const maxVal = Math.max(...rows.map(r => r.total), 1);
       const scaleY = innerH / maxVal;
       svg.setAttribute('viewBox', `0 0 ${chartW} ${chartH}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
       if (wrap) {
         wrap.classList.toggle('equipment-chart-wrap-scrollable', isScrollable);
         wrap.style.overflowX = isScrollable ? 'auto' : 'hidden';
@@ -9941,9 +9945,11 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
       const { dates, series } = buildUtilizationSeries(rows, utilizationMode);
       renderUtilizationLegend(series);
+      if (els.utilizationLegend) els.utilizationLegend.style.display = '';
       if (els.utilizationChartTag) {
         els.utilizationChartTag.textContent = utilizationMode === 'daily' ? 'Daily' : 'Cumulative';
       }
+      if (els.utilizationAxisOverlay) els.utilizationAxisOverlay.style.display = '';
 
       if (!dates.length || !series.length) {
         const empty = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -9965,12 +9971,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         top: 28,
         bottom: 72,
         minWrapWidth: 0,
-        overflowThreshold: utilizationMode === 'daily' ? 8 : 10,
-        minDailySpan: 50,
-        dailyRigFactor: 13,
-        dailyGapFactor: 3,
+        overflowThreshold: utilizationMode === 'daily' ? 7 : 10,
+        minDailySpan: Math.max(86, rigCount * 9 + Math.max(0, rigCount - 1) * 2 + 18),
+        dailyRigFactor: 10,
+        dailyGapFactor: 2,
         dailyPlotSidePad: 28,
-        cumulativeSpan: 60,
+        cumulativeSpan: 72,
         cumulativePlotSidePad: 18
       });
       const { chartW, chartH, left, right, top, bottom, innerW, plotSidePad, stepX } = layout;
@@ -9983,6 +9989,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const lmMax = Math.max(1, ...series.flatMap(item => item.points.map(point => utilizationMode === 'daily' ? point.drilledLm : point.cumulativeLm).filter(Number.isFinite)));
       const yForUtil = value => topArea.y1 + topHeight - (Math.max(0, value) / utilMax) * topHeight;
       const yForLm = value => bottomArea.y1 + bottomHeight - (Math.max(0, value) / lmMax) * bottomHeight;
+
       if (els.utilizationUtilTicks) {
         els.utilizationUtilTicks.innerHTML = Array.from({ length: 5 }, (_, i) => {
           const value = (utilMax / 4) * (4 - i);
@@ -10026,17 +10033,15 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
       const formatUtilValue = point => {
         const value = utilizationMode === 'daily' ? point.utilization : point.cumulativeUtilization;
-        return Number.isFinite(value) && value > 0 ? `${value.toFixed(1)}%` : '-';
+        return Number.isFinite(value) ? `${value.toFixed(1)}%` : '-';
       };
-
       const formatLmValue = point => {
         const value = utilizationMode === 'daily' ? point.drilledLm : point.cumulativeLm;
-        return Number.isFinite(value) && value > 0 ? `${value.toFixed(1)} m` : '-';
+        return Number.isFinite(value) ? `${value.toFixed(1)} m` : '-';
       };
-
       const formatHoursValue = point => {
         const value = utilizationMode === 'daily' ? point.drillingHours : point.cumulativeHours;
-        return Number.isFinite(value) && value > 0 ? `${value.toFixed(1)} hr` : '-';
+        return Number.isFinite(value) ? `${value.toFixed(1)} hr` : '-';
       };
       const pointsForIndex = idx => series.map(item => ({ ...item.points[idx], color: item.color }));
 
@@ -10064,35 +10069,39 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         hoverGuide.style.display = 'none';
       };
 
-      const addGrid = (maxValue, yFor, suffix, areaBottom, fontSize) => {
-        for (let i = 0; i <= 4; i += 1) {
-          const value = (maxValue / 4) * i;
-          const y = yFor(value);
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', String(left));
-          line.setAttribute('x2', String(chartW - right));
-          line.setAttribute('y1', String(y));
-          line.setAttribute('y2', String(y));
-          line.setAttribute('stroke', 'rgba(255,255,255,0.08)');
-          line.setAttribute('stroke-width', '1');
-          svg.appendChild(line);
+      for (let i = 0; i <= 4; i += 1) {
+        const utilLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const utilY = yForUtil((utilMax / 4) * i);
+        utilLine.setAttribute('x1', String(left));
+        utilLine.setAttribute('x2', String(chartW - right));
+        utilLine.setAttribute('y1', String(utilY));
+        utilLine.setAttribute('y2', String(utilY));
+        utilLine.setAttribute('stroke', 'rgba(255,255,255,0.08)');
+        utilLine.setAttribute('stroke-width', '1');
+        svg.appendChild(utilLine);
 
-        }
-      };
-
-      addGrid(utilMax, yForUtil, '%', topArea.y2, 12);
-      addGrid(lmMax, yForLm, '', bottomArea.y2, 11);
+        const lmLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const lmY = yForLm((lmMax / 4) * i);
+        lmLine.setAttribute('x1', String(left));
+        lmLine.setAttribute('x2', String(chartW - right));
+        lmLine.setAttribute('y1', String(lmY));
+        lmLine.setAttribute('y2', String(lmY));
+        lmLine.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+        lmLine.setAttribute('stroke-width', '1');
+        svg.appendChild(lmLine);
+      }
 
       const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       divider.setAttribute('x1', String(left));
       divider.setAttribute('x2', String(chartW - right));
-        divider.setAttribute('y1', String(dividerY));
-        divider.setAttribute('y2', String(dividerY));
+      divider.setAttribute('y1', String(dividerY));
+      divider.setAttribute('y2', String(dividerY));
       divider.setAttribute('stroke', 'rgba(255,255,255,0.14)');
       divider.setAttribute('stroke-width', '1');
       divider.setAttribute('stroke-dasharray', '4 6');
       svg.appendChild(divider);
 
+      const showDateLabelEvery = dates.length > 28 ? 3 : dates.length > 16 ? 2 : 1;
       dates.forEach((dateKey, idx) => {
         const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
 
@@ -10103,21 +10112,33 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           separator.setAttribute('x2', String(separatorX));
           separator.setAttribute('y1', String(topArea.y1));
           separator.setAttribute('y2', String(bottomArea.y2));
-          separator.setAttribute('stroke', 'rgba(255,255,255,0.18)');
+          separator.setAttribute('stroke', 'rgba(255,255,255,0.16)');
           separator.setAttribute('stroke-width', '1');
           separator.setAttribute('stroke-dasharray', '4 8');
           svg.appendChild(separator);
+        } else if (utilizationMode === 'cumulative') {
+          const separator = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          separator.setAttribute('x1', String(x));
+          separator.setAttribute('x2', String(x));
+          separator.setAttribute('y1', String(topArea.y1));
+          separator.setAttribute('y2', String(bottomArea.y2));
+          separator.setAttribute('stroke', 'rgba(255,255,255,0.08)');
+          separator.setAttribute('stroke-width', '1');
+          separator.setAttribute('stroke-dasharray', '2 7');
+          svg.appendChild(separator);
         }
 
-        const dateLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        dateLabel.setAttribute('x', String(x));
-        dateLabel.setAttribute('y', String(chartH - 18));
-        dateLabel.setAttribute('text-anchor', 'middle');
-        dateLabel.setAttribute('fill', 'rgba(244,247,251,0.72)');
-        dateLabel.setAttribute('font-size', '9');
-        dateLabel.setAttribute('font-weight', '700');
-        dateLabel.textContent = formatShortDateLabel(dateKey);
-        svg.appendChild(dateLabel);
+        if (idx % showDateLabelEvery === 0 || idx === dates.length - 1) {
+          const dateLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          dateLabel.setAttribute('x', String(x));
+          dateLabel.setAttribute('y', String(chartH - 18));
+          dateLabel.setAttribute('text-anchor', 'middle');
+          dateLabel.setAttribute('fill', 'rgba(244,247,251,0.72)');
+          dateLabel.setAttribute('font-size', '9');
+          dateLabel.setAttribute('font-weight', '700');
+          dateLabel.textContent = formatShortDateLabel(dateKey);
+          svg.appendChild(dateLabel);
+        }
 
         const hover = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         hover.setAttribute('x', String(x - Math.max(stepX / 2, 24)));
@@ -10132,196 +10153,167 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       });
 
       if (utilizationMode === 'daily') {
-        const clusterWidth = Math.max(stepX * 0.64, rigCount * 16 + (rigCount - 1) * 4);
-        const barGap = 4;
-        const barW = Math.max(8, Math.min(15, (clusterWidth - barGap * (rigCount - 1)) / rigCount));
+        const clusterWidth = Math.max(stepX * 0.84, rigCount * 5 + Math.max(0, rigCount - 1) * 2 + 10);
+        const barGap = 2;
+        const barW = Math.max(2.4, Math.min(5.2, (clusterWidth - barGap * Math.max(0, rigCount - 1)) / rigCount));
+        const showUtilLabels = dates.length <= 9 && rigCount <= 4;
+        const showLmLabels = dates.length <= 8 && rigCount <= 3;
 
         series.forEach((item, rigIdx) => {
           item.points.forEach((point, idx) => {
             const baseX = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
-            const clusterStart = baseX - ((barW * rigCount + barGap * (rigCount - 1)) / 2);
+            const clusterStart = baseX - ((barW * rigCount + barGap * Math.max(0, rigCount - 1)) / 2);
             const x = clusterStart + rigIdx * (barW + barGap);
+            const utilValue = Number.isFinite(point.utilization) ? point.utilization : 0;
+            const lmValue = Number.isFinite(point.drilledLm) ? point.drilledLm : 0;
 
-            const utilValue = point.utilization;
-            if (Number.isFinite(utilValue) && utilValue > 0) {
-              const utilY = yForUtil(utilValue);
-              const utilBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-              utilBar.setAttribute('x', String(x));
-              utilBar.setAttribute('y', String(utilY));
-              utilBar.setAttribute('width', String(barW));
-              utilBar.setAttribute('height', String(Math.max(0, topArea.y2 - utilY)));
-              utilBar.setAttribute('rx', '5');
-              utilBar.setAttribute('fill', item.color);
-              utilBar.setAttribute('fill-opacity', '0.86');
-              utilBar.setAttribute('stroke', 'rgba(255,255,255,0.22)');
-              utilBar.setAttribute('stroke-width', '1');
-              utilBar.style.cursor = 'pointer';
-              utilBar.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), baseX));
-              utilBar.addEventListener('mouseleave', hideTooltip);
-              svg.appendChild(utilBar);
+            const utilBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const utilY = yForUtil(utilValue);
+            utilBar.setAttribute('x', String(x));
+            utilBar.setAttribute('y', String(utilY));
+            utilBar.setAttribute('width', String(barW));
+            utilBar.setAttribute('height', String(Math.max(2, topArea.y2 - utilY)));
+            utilBar.setAttribute('rx', '2.2');
+            utilBar.setAttribute('fill', item.color);
+            utilBar.setAttribute('fill-opacity', utilValue > 0 ? '0.9' : '0.18');
+            utilBar.setAttribute('stroke', 'rgba(255,255,255,0.12)');
+            utilBar.setAttribute('stroke-width', utilValue > 0 ? '0.6' : '0');
+            svg.appendChild(utilBar);
 
+            const lmBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const lmY = yForLm(lmValue);
+            lmBar.setAttribute('x', String(x));
+            lmBar.setAttribute('y', String(lmY));
+            lmBar.setAttribute('width', String(barW));
+            lmBar.setAttribute('height', String(Math.max(2, bottomArea.y2 - lmY)));
+            lmBar.setAttribute('rx', '2.2');
+            lmBar.setAttribute('fill', item.color);
+            lmBar.setAttribute('fill-opacity', lmValue > 0 ? '0.74' : '0.16');
+            lmBar.setAttribute('stroke', 'rgba(255,255,255,0.1)');
+            lmBar.setAttribute('stroke-width', lmValue > 0 ? '0.5' : '0');
+            svg.appendChild(lmBar);
+
+            if (showUtilLabels && utilValue > 0) {
               const utilLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
               utilLabel.setAttribute('x', String(x + barW / 2));
-              utilLabel.setAttribute('y', String(Math.max(topArea.y1 + 14, utilY - 10)));
+              utilLabel.setAttribute('y', String(Math.max(topArea.y1 + 14, utilY - 7)));
               utilLabel.setAttribute('text-anchor', 'middle');
-              utilLabel.setAttribute('fill', 'rgba(244,247,251,0.92)');
-              utilLabel.setAttribute('font-size', '9');
+              utilLabel.setAttribute('fill', 'rgba(244,247,251,0.9)');
+              utilLabel.setAttribute('font-size', '8');
               utilLabel.setAttribute('font-weight', '800');
               utilLabel.textContent = `${utilValue.toFixed(0)}%`;
               utilLabel.style.pointerEvents = 'none';
               svg.appendChild(utilLabel);
-            } else if (Number.isFinite(utilValue)) {
-              const zeroMark = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-              zeroMark.setAttribute('x', String(x));
-              zeroMark.setAttribute('y', String(topArea.y2 - 3));
-              zeroMark.setAttribute('width', String(barW));
-              zeroMark.setAttribute('height', '3');
-              zeroMark.setAttribute('rx', '2');
-              zeroMark.setAttribute('fill', item.color);
-              zeroMark.setAttribute('fill-opacity', '0.38');
-              zeroMark.style.cursor = 'pointer';
-              zeroMark.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), baseX));
-              zeroMark.addEventListener('mouseleave', hideTooltip);
-              svg.appendChild(zeroMark);
             }
 
-            const lmValue = point.drilledLm;
-            if (Number.isFinite(lmValue) && lmValue > 0) {
-              const lmY = yForLm(lmValue);
-              const lmBar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-              lmBar.setAttribute('x', String(x));
-              lmBar.setAttribute('y', String(lmY));
-              lmBar.setAttribute('width', String(barW));
-              lmBar.setAttribute('height', String(Math.max(0, bottomArea.y2 - lmY)));
-              lmBar.setAttribute('rx', '5');
-              lmBar.setAttribute('fill', item.color);
-              lmBar.setAttribute('fill-opacity', '0.78');
-              lmBar.setAttribute('stroke', 'rgba(255,255,255,0.18)');
-              lmBar.setAttribute('stroke-width', '1');
-              lmBar.style.cursor = 'pointer';
-              lmBar.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), baseX));
-              lmBar.addEventListener('mouseleave', hideTooltip);
-              svg.appendChild(lmBar);
-
+            if (showLmLabels && lmValue > 0) {
               const lmLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
               lmLabel.setAttribute('x', String(x + barW / 2));
-              lmLabel.setAttribute('y', String(Math.max(bottomArea.y1 + 12, lmY - 8)));
+              lmLabel.setAttribute('y', String(Math.max(bottomArea.y1 + 12, lmY - 7)));
               lmLabel.setAttribute('text-anchor', 'middle');
-              lmLabel.setAttribute('fill', 'rgba(244,247,251,0.88)');
-              lmLabel.setAttribute('font-size', '8');
+              lmLabel.setAttribute('fill', 'rgba(244,247,251,0.86)');
+              lmLabel.setAttribute('font-size', '7.5');
               lmLabel.setAttribute('font-weight', '800');
               lmLabel.textContent = `${Math.round(lmValue)}m`;
               lmLabel.style.pointerEvents = 'none';
               svg.appendChild(lmLabel);
-            } else if (Number.isFinite(lmValue)) {
-              const zeroLmMark = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-              zeroLmMark.setAttribute('x', String(x));
-              zeroLmMark.setAttribute('y', String(bottomArea.y2 - 3));
-              zeroLmMark.setAttribute('width', String(barW));
-              zeroLmMark.setAttribute('height', '3');
-              zeroLmMark.setAttribute('rx', '2');
-              zeroLmMark.setAttribute('fill', item.color);
-              zeroLmMark.setAttribute('fill-opacity', '0.28');
-              zeroLmMark.style.cursor = 'pointer';
-              zeroLmMark.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), baseX));
-              zeroLmMark.addEventListener('mouseleave', hideTooltip);
-              svg.appendChild(zeroLmMark);
             }
           });
         });
       } else {
         series.forEach(item => {
-          const utilPathParts = [];
-          const lmPathParts = [];
-          let utilStarted = false;
-          let lmStarted = false;
+          const buildPath = (getter, yFor) => {
+            const parts = [];
+            item.points.forEach((point, idx) => {
+              const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
+              const value = getter(point);
+              if (!Number.isFinite(value)) return;
+              parts.push(`${parts.length ? 'L' : 'M'} ${x} ${yFor(value)}`);
+            });
+            return parts.join(' ');
+          };
 
-          item.points.forEach((point, idx) => {
-            const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
-            const utilValue = point.cumulativeUtilization;
-            if (Number.isFinite(utilValue) && utilValue > 0) {
-              utilPathParts.push(`${utilStarted ? 'L' : 'M'} ${x} ${yForUtil(utilValue)}`);
-              utilStarted = true;
-            }
-            lmPathParts.push(`${lmStarted ? 'L' : 'M'} ${x} ${yForLm(point.cumulativeLm)}`);
-            lmStarted = true;
-          });
+          const buildArea = (getter, yFor, baseY) => {
+            const points = [];
+            item.points.forEach((point, idx) => {
+              const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
+              const value = getter(point);
+              if (!Number.isFinite(value)) return;
+              points.push([x, yFor(value)]);
+            });
+            if (!points.length) return '';
+            return `M ${points[0][0]} ${baseY} L ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} L ${points[points.length - 1][0]} ${baseY} Z`;
+          };
 
-          if (utilPathParts.length) {
-            const utilPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            utilPath.setAttribute('d', utilPathParts.join(' '));
-            utilPath.setAttribute('fill', 'none');
-            utilPath.setAttribute('stroke', item.color);
-            utilPath.setAttribute('stroke-width', '3');
-            utilPath.setAttribute('stroke-linecap', 'round');
-            utilPath.setAttribute('stroke-linejoin', 'round');
-            utilPath.setAttribute('opacity', '0.96');
-            svg.appendChild(utilPath);
+          const utilAreaPath = buildArea(point => point.cumulativeUtilization, yForUtil, topArea.y2);
+          if (utilAreaPath) {
+            const utilArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            utilArea.setAttribute('d', utilAreaPath);
+            utilArea.setAttribute('fill', item.color);
+            utilArea.setAttribute('fill-opacity', '0.08');
+            svg.appendChild(utilArea);
           }
 
-          const lmPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          lmPath.setAttribute('d', lmPathParts.join(' '));
-          lmPath.setAttribute('fill', 'none');
-          lmPath.setAttribute('stroke', item.color);
-          lmPath.setAttribute('stroke-width', '2.6');
-          lmPath.setAttribute('stroke-linecap', 'round');
-          lmPath.setAttribute('stroke-linejoin', 'round');
-          lmPath.setAttribute('opacity', '0.95');
-          svg.appendChild(lmPath);
+          const utilPath = buildPath(point => point.cumulativeUtilization, yForUtil);
+          if (utilPath) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', utilPath);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', item.color);
+            path.setAttribute('stroke-width', '2.8');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            path.setAttribute('opacity', '0.96');
+            svg.appendChild(path);
+          }
+
+          const lmAreaPath = buildArea(point => point.cumulativeLm, yForLm, bottomArea.y2);
+          if (lmAreaPath) {
+            const lmArea = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            lmArea.setAttribute('d', lmAreaPath);
+            lmArea.setAttribute('fill', item.color);
+            lmArea.setAttribute('fill-opacity', '0.06');
+            svg.appendChild(lmArea);
+          }
+
+          const lmPath = buildPath(point => point.cumulativeLm, yForLm);
+          if (lmPath) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', lmPath);
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', item.color);
+            path.setAttribute('stroke-width', '2.3');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            path.setAttribute('opacity', '0.9');
+            svg.appendChild(path);
+          }
 
           item.points.forEach((point, idx) => {
             const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
-            const utilValue = point.cumulativeUtilization;
-            if (Number.isFinite(utilValue) && utilValue > 0) {
-              const utilY = yForUtil(utilValue);
+
+            if (Number.isFinite(point.cumulativeUtilization)) {
+              const utilY = yForUtil(point.cumulativeUtilization);
               const utilDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
               utilDot.setAttribute('cx', String(x));
               utilDot.setAttribute('cy', String(utilY));
-              utilDot.setAttribute('r', '4.8');
+              utilDot.setAttribute('r', dates.length > 22 ? '3.6' : '4.4');
               utilDot.setAttribute('fill', item.color);
-              utilDot.setAttribute('stroke', 'rgba(255,255,255,0.9)');
-              utilDot.setAttribute('stroke-width', '1.6');
-              utilDot.style.cursor = 'pointer';
-              utilDot.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), x));
-              utilDot.addEventListener('mouseleave', hideTooltip);
+              utilDot.setAttribute('stroke', 'rgba(255,255,255,0.84)');
+              utilDot.setAttribute('stroke-width', '1.4');
               svg.appendChild(utilDot);
-
-              const utilLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-              utilLabel.setAttribute('x', String(x));
-              utilLabel.setAttribute('y', String(Math.max(topArea.y1 + 14, utilY - 12)));
-              utilLabel.setAttribute('text-anchor', 'middle');
-              utilLabel.setAttribute('fill', 'rgba(244,247,251,0.92)');
-              utilLabel.setAttribute('font-size', '9');
-              utilLabel.setAttribute('font-weight', '800');
-              utilLabel.textContent = `${utilValue.toFixed(0)}%`;
-              utilLabel.style.pointerEvents = 'none';
-              svg.appendChild(utilLabel);
             }
 
-            if (Number.isFinite(point.cumulativeLm) && point.cumulativeLm > 0) {
+            if (Number.isFinite(point.cumulativeLm)) {
               const lmY = yForLm(point.cumulativeLm);
               const lmDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
               lmDot.setAttribute('cx', String(x));
               lmDot.setAttribute('cy', String(lmY));
-              lmDot.setAttribute('r', '4.2');
+              lmDot.setAttribute('r', dates.length > 22 ? '3' : '3.8');
               lmDot.setAttribute('fill', item.color);
-              lmDot.setAttribute('stroke', 'rgba(255,255,255,0.88)');
-              lmDot.setAttribute('stroke-width', '1.4');
-              lmDot.style.cursor = 'pointer';
-              lmDot.addEventListener('mousemove', evt => showTooltip(evt, point.date, pointsForIndex(idx), x));
-              lmDot.addEventListener('mouseleave', hideTooltip);
+              lmDot.setAttribute('stroke', 'rgba(255,255,255,0.76)');
+              lmDot.setAttribute('stroke-width', '1.2');
               svg.appendChild(lmDot);
-
-              const lmLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-              lmLabel.setAttribute('x', String(x));
-              lmLabel.setAttribute('y', String(Math.max(bottomArea.y1 + 12, lmY - 10)));
-              lmLabel.setAttribute('text-anchor', 'middle');
-              lmLabel.setAttribute('fill', 'rgba(244,247,251,0.88)');
-              lmLabel.setAttribute('font-size', '8');
-              lmLabel.setAttribute('font-weight', '800');
-              lmLabel.textContent = `${Math.round(point.cumulativeLm)}m`;
-              lmLabel.style.pointerEvents = 'none';
-              svg.appendChild(lmLabel);
             }
           });
         });

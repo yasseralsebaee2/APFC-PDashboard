@@ -99,6 +99,18 @@
       border: 2px solid #B784D7;
       border-radius: 3px;
     }
+    .map-legend-swatch.triangle-static::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 2px;
+      width: 0;
+      height: 0;
+      transform: translateX(-50%);
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-bottom: 12px solid #32d27c;
+    }
 
     .tests-legend {
       position: absolute;
@@ -144,6 +156,18 @@
       inset: 3px;
       border: 2px solid #B784D7;
       border-radius: 3px;
+    }
+    .tests-legend-swatch.triangle-static::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 2px;
+      width: 0;
+      height: 0;
+      transform: translateX(-50%);
+      border-left: 8px solid transparent;
+      border-right: 8px solid transparent;
+      border-bottom: 14px solid #32d27c;
     }
     .mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right { bottom: 4px !important; z-index: 60 !important; }
     .mapboxgl-ctrl-attrib {
@@ -535,6 +559,13 @@
       font-weight: 400;
       color: #0073ff;
     }
+    .pile-label-marker.secant-label .pile-label-id {
+      top: 0;
+      transform: translate(-50%, -50%);
+    }
+    .pile-label-marker.secant-label .pile-label-type {
+      display: none;
+    }
     .pile-label-marker.satellite .pile-label-id {
       color: #f4fbff;
       text-shadow:
@@ -923,6 +954,7 @@
     <div class="map-legend-item"><span class="status-dot remaining"></span><span>Remaining</span></div>
     <div class="map-legend-item"><span class="map-legend-swatch circle"></span><span>Sonic Test</span></div>
     <div class="map-legend-item"><span class="map-legend-swatch rectangle"></span><span>Dynamic Test</span></div>
+    <div class="map-legend-item"><span class="map-legend-swatch triangle-static"></span><span>Static Test</span></div>
   </div>
   <div id="sidePanel" class="side-panel">
     <div class="side-panel-header">
@@ -1071,8 +1103,8 @@
         yesterday: 0xffb02e,
         yesterdayEmissive: 0xff7a18,
         // Remaining piles: in Street we use the old kingpost neutral grey; in Satellite we keep it lighter.
-        remainingStreet: 0x8c98a8,
-        remainingStreetEmissive: 0x5f6c7f,
+        remainingStreet: 0xd9e1ea,
+        remainingStreetEmissive: 0xaebac8,
         remainingSatellite: 0xcfd8e4,
         remainingSatelliteEmissive: 0x8aa1b5,
         kingpostInstalled: 0x12de68,
@@ -1468,7 +1500,7 @@
     function getPileRadiusMeters(row) {
       const diaMm = parseNumber(row.diameter);
       const actualRadius = diaMm > 0 ? diaMm / 2000 : 0.5;
-      return Math.max(actualRadius * DISPLAY_RADIUS_SCALE, MIN_DISPLAY_RADIUS_M);
+      return Math.max(actualRadius, 0.18);
     }
 
     function clamp(value, min, max) {
@@ -1574,6 +1606,7 @@
       if (!raw) return '';
       if (raw.includes('sonic')) return 'sonic';
       if (raw.includes('dynamic')) return 'dynamic';
+      if (raw.includes('static')) return 'static';
       return '';
     }
     function buildCirclePolygonFromProjected(x, y, radiusM, steps = 64) {
@@ -1618,15 +1651,49 @@
         }
       };
     }
+    function buildTrianglePolygonFromProjected(x, y, halfSizeM) {
+      if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y)) || !Number.isFinite(Number(halfSizeM)) || Number(halfSizeM) <= 0) return null;
+      const centerX = Number(x);
+      const centerY = Number(y);
+      const triHeight = halfSizeM * 1.95;
+      const corners = [
+        [centerX, centerY + triHeight],
+        [centerX + halfSizeM * 1.35, centerY - halfSizeM * 0.9],
+        [centerX - halfSizeM * 1.35, centerY - halfSizeM * 0.9],
+        [centerX, centerY + triHeight]
+      ];
+      const lngLats = [];
+      for (const [px, py] of corners) {
+        const lngLat = dltmToWgs84(px, py);
+        if (!lngLat) return null;
+        lngLats.push(lngLat);
+      }
+      return {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [lngLats]
+        }
+      };
+    }
     function buildTestShapeFeatures(rows) {
       const features = [];
       rows.forEach(row => {
         const testType = getTestType(row);
         if (!testType) return;
-        const baseRadius = getPileRadiusMeters(row) * 1.16;
-        const feature = testType === 'dynamic'
-          ? buildRectanglePolygonFromProjected(row.design_x, row.design_y, baseRadius)
-          : buildCirclePolygonFromProjected(row.design_x, row.design_y, baseRadius, 72);
+        const baseRadius = getPileRadiusMeters(row) * (
+          testType === 'sonic' ? 1.42 :
+          testType === 'dynamic' ? 1.62 :
+          1.82
+        );
+        let feature = null;
+        if (testType === 'dynamic') {
+          feature = buildRectanglePolygonFromProjected(row.design_x, row.design_y, baseRadius);
+        } else if (testType === 'static') {
+          feature = buildTrianglePolygonFromProjected(row.design_x, row.design_y, baseRadius);
+        } else {
+          feature = buildCirclePolygonFromProjected(row.design_x, row.design_y, baseRadius, 72);
+        }
         if (!feature) return;
         feature.properties = {
           id: normalizeId(row.id),
@@ -1653,8 +1720,8 @@
         type: 'line',
         source: sourceId,
         layout: {
-          'line-join': 'round',
-          'line-cap': 'round'
+          'line-join': 'miter',
+          'line-cap': 'butt'
         },
         paint: {
           'line-color': [
@@ -1662,16 +1729,51 @@
             ['get', 'testType'],
             'sonic', '#2D7FF9',
             'dynamic', '#B784D7',
+            'static', '#32d27c',
             '#2D7FF9'
           ],
           'line-width': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            16, 1.5,
-            18, 2.2,
-            20, 3.4,
-            22, 5.2
+            'match',
+            ['get', 'testType'],
+            'sonic',
+            [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              16, 2.2,
+              18, 3.1,
+              20, 4.4,
+              22, 6.4
+            ],
+            'dynamic',
+            [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              16, 2.9,
+              18, 4.0,
+              20, 5.5,
+              22, 7.6
+            ],
+            'static',
+            [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              16, 2.9,
+              18, 4.0,
+              20, 5.5,
+              22, 7.6
+            ],
+            [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              16, 2.2,
+              18, 3.1,
+              20, 4.4,
+              22, 6.4
+            ]
           ],
           'line-opacity': 0.95
         }
@@ -3345,9 +3447,9 @@
     function getPileBaseColor(record) {
       const stateKey = getPileStateKey(record);
       if (record?.elementType === 'secantpile' && record?.secantType === 'secondary') {
-        if (stateKey === 'yesterday') return 0xffddb0;
-        if (stateKey === 'executed') return 0xc5f9dc;
-        return isSatellite ? 0xf2f6fb : 0xd9e1ea;
+        if (stateKey === 'yesterday') return 0xffedd9;
+        if (stateKey === 'executed') return 0xe6fcf0;
+        return isSatellite ? 0xfbfcfe : 0xf0f4f8;
       }
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterday;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executed;
@@ -3358,9 +3460,9 @@
     function getPileBaseEmissive(record) {
       const stateKey = getPileStateKey(record);
       if (record?.elementType === 'secantpile' && record?.secantType === 'secondary') {
-        if (stateKey === 'yesterday') return 0xffc884;
-        if (stateKey === 'executed') return 0x95efc0;
-        return isSatellite ? 0xcbd6e2 : 0x9aa9b9;
+        if (stateKey === 'yesterday') return 0xffe3bd;
+        if (stateKey === 'executed') return 0xc9f7dd;
+        return isSatellite ? 0xe7edf4 : 0xd0d9e3;
       }
       if (stateKey === 'yesterday') return MAP_PREMIUM.colors.yesterdayEmissive;
       if (stateKey === 'executed') return MAP_PREMIUM.colors.executedEmissive;
@@ -3498,14 +3600,33 @@
         else if (node.material.dispose) node.material.dispose();
       }
     }
+    function buildClosedTubeOutline(points, radius, color) {
+      const curvePoints = points.slice(0, -1).map(point => point.clone());
+      const curve = new THREE.CatmullRomCurve3(curvePoints, true, 'catmullrom', 0);
+      const geometry = new THREE.TubeGeometry(curve, Math.max(48, curvePoints.length * 20), radius, 10, true);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.98,
+        depthTest: false,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = 1200;
+      return mesh;
+    }
     function build3DTestIndicator(record) {
       const testType = getTestType(record.row);
       if (!testType) return null;
-      const size = record.radiusM * 1.16;
+      const size = record.radiusM * (
+        testType === 'sonic' ? 1.42 :
+        testType === 'dynamic' ? 1.62 :
+        1.82
+      );
       const topZ = Number.isFinite(Number(record?._local3d?.topZ)) ? Number(record._local3d.topZ) : -0.02;
       const zOffset = topZ + 0.05;
       if (testType === 'sonic') {
-        const geometry = new THREE.RingGeometry(size * 0.90, size * 1.02, 56);
+        const geometry = new THREE.RingGeometry(size * 0.86, size * 1.06, 64);
         const material = new THREE.MeshBasicMaterial({
           color: 0x2D7FF9,
           transparent: true,
@@ -3519,25 +3640,27 @@
         mesh.renderOrder = 1200;
         return mesh;
       }
-      const points = [
-        new THREE.Vector3(-size, -size, 0),
-        new THREE.Vector3(size, -size, 0),
-        new THREE.Vector3(size, size, 0),
-        new THREE.Vector3(-size, size, 0),
-        new THREE.Vector3(-size, -size, 0)
-      ];
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({
-        color: 0xB784D7,
-        transparent: true,
-        opacity: 0.98,
-        depthTest: false,
-        depthWrite: false
-      });
-      const line = new THREE.Line(geometry, material);
-      line.position.set(record._local3d.x, record._local3d.y, zOffset);
-      line.renderOrder = 1200;
-      return line;
+      const points = testType === 'static'
+        ? [
+            new THREE.Vector3(0, size * 1.22, 0),
+            new THREE.Vector3(size * 1.28, -size * 0.82, 0),
+            new THREE.Vector3(-size * 1.28, -size * 0.82, 0),
+            new THREE.Vector3(0, size * 1.22, 0)
+          ]
+        : [
+            new THREE.Vector3(-size, -size, 0),
+            new THREE.Vector3(size, -size, 0),
+            new THREE.Vector3(size, size, 0),
+            new THREE.Vector3(-size, size, 0),
+            new THREE.Vector3(-size, -size, 0)
+          ];
+      const mesh = buildClosedTubeOutline(
+        points,
+        size * (testType === 'static' ? 0.13 : 0.12),
+        testType === 'static' ? 0x32d27c : 0xB784D7
+      );
+      mesh.position.set(record._local3d.x, record._local3d.y, zOffset);
+      return mesh;
     }
 
     function createKingPostShape(profile) {
@@ -4561,6 +4684,7 @@
         const wrap = document.createElement('div');
         wrap.className = 'pile-label-marker';
         if (isSatellite) wrap.classList.add('satellite');
+        if (record.elementType === 'secantpile') wrap.classList.add('secant-label');
         if (isPrintMode) wrap.classList.add('print-label-mode');
         if (use3dOverlay) wrap.classList.add('overlay3d');
 
@@ -4573,9 +4697,9 @@
 
         const typeEl = document.createElement('div');
         typeEl.className = 'pile-label-type';
-        typeEl.textContent = !showType || record.elementType === 'kingpost'
+        typeEl.textContent = !showType || record.elementType === 'kingpost' || record.elementType === 'secantpile'
           ? ''
-          : (record.elementType === 'secantpile' ? (record.row.type || '') : (record.row.pileType || ''));
+          : (record.row.pileType || '');
 
         content.appendChild(idEl);
         content.appendChild(typeEl);
