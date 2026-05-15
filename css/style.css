@@ -2485,6 +2485,20 @@ body.auth-locked .auth-shell {
     overflow: hidden;
   }
 
+  #pageOverview,
+  #pageOverview.page-view,
+  #pageOverview.page-view.active {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #pageOverview .report-stack {
+    min-height: max-content;
+  }
+
   .kpi-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
@@ -3053,6 +3067,18 @@ body.auth-locked .auth-shell {
   .page-view {
     height: auto;
     overflow: visible;
+  }
+
+  #pageOverview,
+  #pageOverview.page-view,
+  #pageOverview.page-view.active {
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #pageOverview .report-stack {
+    min-height: max-content;
   }
 
   .panel.hero,
