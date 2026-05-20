@@ -231,6 +231,11 @@
                                 <stop offset="55%" stop-color="#60a5fa" stop-opacity="0.62" />
                                 <stop offset="100%" stop-color="#60a5fa" stop-opacity="0.20" />
                               </linearGradient>
+                              <linearGradient id="barGradientAnchor" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="#ffcf96" />
+                                <stop offset="55%" stop-color="#ffb26b" stop-opacity="0.62" />
+                                <stop offset="100%" stop-color="#ffb26b" stop-opacity="0.20" />
+                              </linearGradient>
                             </defs>
                             <g id="chartGrid"></g>
                             <g id="chartSeries"></g>
@@ -857,6 +862,22 @@
           </div>
         </section>
 
+        <div class="cost-sheet-modal" id="costSheetModal" hidden aria-hidden="true">
+          <div class="cost-sheet-backdrop" id="costSheetBackdrop"></div>
+          <div class="cost-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby="costSheetTitle">
+            <div class="cost-sheet-toolbar">
+              <div class="cost-sheet-toolbar-copy">
+                <div class="cost-sheet-eyebrow">Cost Control Worksheet</div>
+                <div class="cost-sheet-title" id="costSheetTitle">Period Cost Buildup</div>
+              </div>
+              <button type="button" class="cost-sheet-close" id="costSheetCloseBtn" aria-label="Close">&#215;</button>
+            </div>
+            <div class="cost-sheet-scroll">
+              <div class="cost-sheet-body" id="costSheetBody"></div>
+            </div>
+          </div>
+        </div>
+
       </section>
     </main>
   </div>
@@ -977,3 +998,4 @@
     }
   </script>
 </html>
+

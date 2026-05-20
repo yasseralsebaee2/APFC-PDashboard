@@ -1097,6 +1097,10 @@ body.auth-locked .auth-shell {
       background: rgba(112, 164, 255, 0.95);
       box-shadow: 0 0 0 3px rgba(112, 164, 255, 0.16);
     }
+    .overview-activity-dot.anchors {
+      background: rgba(255, 178, 107, 0.95);
+      box-shadow: 0 0 0 3px rgba(255, 178, 107, 0.16);
+    }
     .overview-progress-line {
       display: flex;
       justify-content: space-between;
@@ -3445,6 +3449,324 @@ body.auth-locked .auth-shell {
   height: 100%;
 }
 
+.cost-period-trigger {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+}
+
+.cost-period-trigger:hover {
+  color: rgba(255,255,255,0.96);
+}
+
+.cost-sheet-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+}
+
+body.cost-sheet-open {
+  overflow: hidden;
+}
+
+.cost-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6,10,14,0.62);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.cost-sheet-dialog {
+  position: relative;
+  width: min(1180px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  margin: 24px auto;
+  background: #f6f9fc;
+  color: #132033;
+  border-radius: 6px;
+  border: 1px solid rgba(77, 102, 132, 0.35);
+  box-shadow: 0 18px 54px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+.cost-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(77, 102, 132, 0.28);
+  background: linear-gradient(180deg, #a8bdd8, #97b0cf);
+}
+
+.cost-sheet-eyebrow {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #34557d;
+}
+
+.cost-sheet-title {
+  margin-top: 1px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #16263e;
+}
+
+.cost-sheet-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 2px;
+  border: 1px solid rgba(77, 102, 132, 0.28);
+  background: #dfeaf7;
+  color: #334155;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cost-sheet-scroll {
+  max-height: calc(100vh - 136px);
+  overflow: auto;
+  padding: 0 12px 12px;
+}
+
+.cost-sheet-body {
+  padding-top: 8px;
+}
+
+.cost-sheet-worksheet-head {
+  margin-bottom: 10px;
+  border: 1px solid rgba(77, 102, 132, 0.26);
+  background: #fff;
+}
+
+.cost-sheet-head-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cost-sheet-head-table th,
+.cost-sheet-head-table td {
+  padding: 8px 10px;
+  border: 1px solid rgba(77, 102, 132, 0.18);
+  vertical-align: middle;
+}
+
+.cost-sheet-head-table th,
+.cost-sheet-summary-ledger span,
+.cost-sheet-inline-summary span {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #546f91;
+  background: #edf3fa;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.cost-sheet-head-table td {
+  font-size: 13px;
+  font-weight: 700;
+  color: #21344f;
+}
+
+.cost-sheet-head-table td.is-major {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1b2f4a;
+}
+
+.cost-sheet-head-table td.num,
+.cost-sheet-summary-table th.num,
+.cost-sheet-pivot-table th.num {
+  text-align: right;
+}
+
+.cost-head-label {
+  width: 11%;
+}
+
+.cost-head-value {
+  width: 22.333%;
+}
+
+.cost-sheet-summary-table,
+.cost-sheet-pivot-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  table-layout: fixed;
+}
+
+.cost-sheet-summary-table th,
+.cost-sheet-summary-table td,
+.cost-sheet-pivot-table th,
+.cost-sheet-pivot-table td {
+  padding: 6px 10px;
+  border: 1px solid rgba(77, 102, 132, 0.18);
+  font-size: 11px;
+  color: #223247;
+  vertical-align: middle;
+}
+
+.cost-sheet-summary-table thead th,
+.cost-sheet-pivot-table thead th {
+  background: #e9f0f8;
+  color: #466281;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.cost-sheet-summary-table .num,
+.cost-sheet-pivot-table .num {
+  text-align: right;
+}
+
+.cost-sheet-summary-table tbody tr.is-total td {
+  background: #edf5ff;
+  font-weight: 900;
+  color: #1b3556;
+}
+
+.cost-sheet-section {
+  margin-top: 10px;
+  padding: 0;
+  border-radius: 0;
+  border: 1px solid rgba(77, 102, 132, 0.24);
+  background: #fff;
+}
+
+.cost-sheet-section-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(77, 102, 132, 0.18);
+  background: linear-gradient(180deg, #edf4fb, #dfeaf7);
+}
+
+.cost-sheet-section-head h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #355175;
+}
+
+.cost-sheet-section-head strong,
+.cost-sheet-day-total {
+  color: #17253b;
+  font-weight: 900;
+}
+
+.cost-sheet-group-row td {
+  background: #f2f7fd;
+  font-weight: 800;
+  color: #223d60;
+}
+
+.cost-sheet-group-row td:last-child {
+  color: #1d3554;
+}
+
+.cost-col-desc {
+  width: 34%;
+}
+
+.cost-col-qty,
+.cost-col-unit,
+.cost-col-days {
+  width: 16%;
+}
+
+.cost-col-rate,
+.cost-col-amount {
+  width: 17%;
+}
+
+.cost-col-supplier {
+  width: 16%;
+}
+
+.cost-sheet-group-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cost-sheet-group-toggle {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(77, 102, 132, 0.28);
+  background: #fff;
+  color: #395273;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cost-sheet-group-meta {
+  color: #607a9f;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.cost-sheet-group-empty {
+  background: #f2f7fd;
+}
+
+.cost-sheet-group-qty {
+  color: #2d4668;
+  white-space: nowrap;
+}
+
+.cost-sheet-group-total {
+  white-space: nowrap;
+}
+
+.cost-sheet-detail-row td {
+  background: #fff;
+}
+
+.cost-sheet-pivot-table tbody td:nth-child(2),
+.cost-sheet-pivot-table tbody td:nth-child(3),
+.cost-sheet-pivot-table tbody td:nth-child(4) {
+  color: #314a68;
+}
+
+.cost-sheet-subtotal-row td {
+  background: #edf4fc;
+  font-weight: 800;
+  color: #284465;
+}
+
+.cost-sheet-empty {
+  padding: 12px 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .cost-pivot-toggle {
   cursor: pointer;
   display: inline-flex;
@@ -5133,6 +5455,14 @@ body.auth-locked .auth-shell {
   background: rgba(255,255,255,0.04);
 }
 
+.utilization-table tbody tr.utilization-group-latest td {
+  background: rgba(142,240,191,0.045);
+}
+
+.utilization-table tbody tr.utilization-group-latest:hover td {
+  background: rgba(142,240,191,0.07);
+}
+
 .utilization-table tr.utilization-group-start td {
   border-top: 1px solid rgba(142,240,191,0.2);
 }
@@ -5160,6 +5490,13 @@ body.auth-locked .auth-shell {
   background: rgba(255,255,255,0.02);
   font-weight: 800;
   vertical-align: middle;
+}
+
+.utilization-date-cell.utilization-group-latest,
+.utilization-total-cell.utilization-group-latest {
+  background:
+    linear-gradient(180deg, rgba(142,240,191,0.08), rgba(142,240,191,0.03)),
+    rgba(255,255,255,0.02);
 }
 
 .utilization-date-block,

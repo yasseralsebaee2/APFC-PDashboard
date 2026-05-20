@@ -153,6 +153,10 @@
       costTrendSvg: document.getElementById('costTrendSvg'),
       costLmWrap: document.getElementById('costLmWrap'),
       costLmSvg: document.getElementById('costLmSvg'),
+      costSheetModal: document.getElementById('costSheetModal'),
+      costSheetBackdrop: document.getElementById('costSheetBackdrop'),
+      costSheetCloseBtn: document.getElementById('costSheetCloseBtn'),
+      costSheetBody: document.getElementById('costSheetBody'),
       manpowerTableBody: document.getElementById('manpowerTableBody'),
       manpowerHistSvg: document.getElementById('manpowerHistSvg'),
       equipmentTableBody: document.getElementById('equipmentTableBody'),
@@ -257,6 +261,7 @@
       overexcavation: 'day'
     };
     let productionChartsInitialized = false;
+    let latestCostSheetContext = null;
 
     let timelineState = {
       start: '',
@@ -371,6 +376,7 @@
           const freeLength = Number(row.design_freelength ?? row.design_FreeLength ?? 0) || 0;
           const bondingLength = Number(row.design_bondinglength ?? row.design_BondingLength ?? 0) || 0;
           const installDate = row.asbuilt_installationdate || row.asbuilt_InstallationDate || '';
+          const prestressDate = row.asbuilt_prestressingdate || row.asbuilt_PrestressingDate || '';
           return {
             project: normalizeText(row.project || row.Project),
             plot: normalizeText(row.plot || row.Plot),
@@ -378,6 +384,8 @@
             activityLabel: 'Anchors',
             countUnit: 'Anchor',
             castingDate: installDate,
+            installationDate: installDate,
+            prestressingDate: prestressDate,
             asbuilt_depth: freeLength + bondingLength,
             machine: normalizeText(row.asbuilt_rig || row.asbuilt_Rig || ''),
             isExecuted: !!normalizeDateString(installDate)
@@ -619,6 +627,8 @@
     }
 
     function sanitizeDailyReportEquipmentRow(row) {
+      const rentalRateRaw = row.rentalrate ?? row.rentalRate ?? row.RentalRate ?? row['Rental Rate'];
+      const rentalRate = Number(rentalRateRaw);
       return {
         date: normalizeDateString(row.date || row.Date),
         project: getCompanyProjectLabel(row.project || row.Project),
@@ -626,7 +636,8 @@
         plot: normalizeText(row.plot || row.Plot),
         contractor: normalizeText(row.contractor || row.Contractor),
         label: normalizeText(row.rig || row.Rig || row.name || row.Name),
-        type: normalizeText(row.type || row.Type)
+        type: normalizeText(row.type || row.Type),
+        rentalRate: Number.isFinite(rentalRate) ? rentalRate : 0
       };
     }
 
@@ -1653,19 +1664,59 @@
       broadcastAuthContext();
     }
 
-    function formatDateKeyInTimezone(value, timeZone = 'Asia/Dubai') {
+    function getDateTimePartsInTimezone(value, timeZone = 'Asia/Dubai') {
       const d = value instanceof Date ? value : new Date(value);
-      if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+      if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
       const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone,
         year: 'numeric',
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
       }).formatToParts(d);
-      const year = parts.find(part => part.type === 'year')?.value;
-      const month = parts.find(part => part.type === 'month')?.value;
-      const day = parts.find(part => part.type === 'day')?.value;
-      return year && month && day ? `${year}-${month}-${day}` : '';
+      const read = type => parts.find(part => part.type === type)?.value || '';
+      const year = read('year');
+      const month = read('month');
+      const day = read('day');
+      const hour = Number(read('hour'));
+      const minute = Number(read('minute'));
+      const second = Number(read('second'));
+      if (!year || !month || !day || !Number.isFinite(hour) || !Number.isFinite(minute) || !Number.isFinite(second)) {
+        return null;
+      }
+      return {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        dateKey: `${year}-${month}-${day}`
+      };
+    }
+
+    function shiftDateKey(dateKey, dayOffset) {
+      if (!dateKey) return '';
+      const d = new Date(`${dateKey}T00:00:00Z`);
+      if (Number.isNaN(d.getTime())) return '';
+      d.setUTCDate(d.getUTCDate() + dayOffset);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function formatDateKeyInTimezone(value, timeZone = 'Asia/Dubai') {
+      return getDateTimePartsInTimezone(value, timeZone)?.dateKey || '';
+    }
+
+    function getShiftDateKeyInTimezone(value, shiftStartHour = 7, timeZone = 'Asia/Dubai') {
+      const parts = getDateTimePartsInTimezone(value, timeZone);
+      if (!parts) return '';
+      const totalMinutes = parts.hour * 60 + parts.minute + (parts.second / 60);
+      return totalMinutes < (shiftStartHour * 60)
+        ? shiftDateKey(parts.dateKey, -1)
+        : parts.dateKey;
     }
 
     function getProductionDateKey(row) {
@@ -1694,17 +1745,10 @@
       const concreteEnd = concreteEndRaw ? new Date(concreteEndRaw) : null;
 
       if (concreteEnd instanceof Date && !Number.isNaN(concreteEnd.getTime())) {
-        const d = new Date(concreteEnd);
-
         if (overviewDateMode === 'calendar') {
-          return formatDateKeyInTimezone(d);
+          return formatDateKeyInTimezone(concreteEnd);
         }
-
-        const totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
-        if (totalMinutes < (7 * 60)) {
-          d.setUTCDate(d.getUTCDate() - 1);
-        }
-        return d.toISOString().slice(0, 10);
+        return getShiftDateKeyInTimezone(concreteEnd, 7);
       }
 
       return normalizeDateString(row?.castingDate);
@@ -1901,6 +1945,60 @@
       return getScopedOverviewRows(secantPileRows, project);
     }
 
+    function getProjectWidePileRows(project) {
+      const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
+      const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
+      return rawRows.filter(r => !targetProject || normalizeText(r.project) === targetProject);
+    }
+
+    function getProjectWideSecantPileRows(project) {
+      const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
+      const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
+      return secantPileRows.filter(r => !targetProject || normalizeText(r.project) === targetProject);
+    }
+
+    function getProjectWideManpowerRows(project) {
+      const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
+      const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
+      return manpowerRows.filter(r => !targetProject || normalizeText(r?.project) === targetProject);
+    }
+
+    function getProjectWideDailyEquipmentRows(project) {
+      const targetProjectToken = getCompanyProjectToken(project || selectedProject || DEFAULT_PROJECT);
+      return dailyReportEquipmentRows
+        .map(sanitizeDailyReportEquipmentRow)
+        .filter(item => getCompanyProjectToken(item.projectRaw || item.project) === targetProjectToken);
+    }
+
+    function getSecantExecutionDateKey(row) {
+      return normalizeDateString(row?.castingDate || row?.drillingDate || row?.asbuilt_drillingdate || row?.asbuilt_DrillingDate);
+    }
+
+    function getISOWeekDateKeys(weekNumber, year) {
+      const week = Number(weekNumber);
+      const targetYear = Number(year);
+      if (!Number.isFinite(week) || !Number.isFinite(targetYear)) return [];
+      const jan4 = new Date(Date.UTC(targetYear, 0, 4));
+      const jan4Day = jan4.getUTCDay() || 7;
+      const monday = new Date(jan4);
+      monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1 + (week - 1) * 7);
+      return Array.from({ length: 6 }, (_, idx) => {
+        const d = new Date(monday);
+        d.setUTCDate(monday.getUTCDate() + idx);
+        return d.toISOString().slice(0, 10);
+      });
+    }
+
+    function getManpowerCountValue(row, keys) {
+      for (const key of keys) {
+        const raw = row?.[key];
+        if (raw === undefined || raw === null || raw === '') continue;
+        const n = Number(raw);
+        if (Number.isFinite(n)) return n;
+      }
+      return 0;
+    }
+
     function getPortfolioPileRows(project = 'All Projects') {
       const rawProject = normalizeText(project || 'All Projects');
       const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
@@ -1964,6 +2062,31 @@
       return normalizePileElementTypeKey(value) === 'boredpile';
     }
 
+    function buildLinearKpiRows(rows, options = {}) {
+      const getExecutedDate = typeof options.getExecutedDate === 'function'
+        ? options.getExecutedDate
+        : (row => row?.castingDate || '');
+      const getDepth = typeof options.getDepth === 'function'
+        ? options.getDepth
+        : (row => Number(row?.asbuilt_depth) || 0);
+      const getMachine = typeof options.getMachine === 'function'
+        ? options.getMachine
+        : (row => normalizeText(row?.machine) || '');
+      return rows.map(row => {
+        const executedDateRaw = getExecutedDate(row);
+        const executedDate = normalizeDateString(executedDateRaw);
+        return {
+          project: normalizeText(row?.project),
+          plot: normalizeText(row?.plot),
+          id: normalizeText(row?.id),
+          machine: getMachine(row),
+          castingDate: executedDateRaw,
+          asbuilt_depth: getDepth(row),
+          isExecuted: !!executedDate
+        };
+      });
+    }
+
     function getOverviewKpiActivities(project = selectedProject) {
       const pileRows = getRowsForProject(project);
       const kingRows = getKingPostRowsForProject(project);
@@ -2006,39 +2129,7 @@
 
       pileItems.forEach(item => activities.push(item));
 
-      if (kingRows.length) {
-        if (segmentByPlot) {
-          const kingByPlot = new Map();
-          kingRows.forEach(row => {
-            const plotLabel = normalizeText(row?.plot) || '-';
-            if (!kingByPlot.has(plotLabel)) {
-              kingByPlot.set(plotLabel, {
-                key: `kingposts__${plotLabel}`,
-                kind: 'kingposts',
-                label: 'KingPosts',
-                countUnit: 'Kingpost',
-                plotLabel,
-                rows: []
-              });
-            }
-            kingByPlot.get(plotLabel).rows.push(row);
-          });
-          Array.from(kingByPlot.values())
-            .sort((a, b) => normalizeText(a.plotLabel).localeCompare(normalizeText(b.plotLabel), undefined, { numeric: true }))
-            .forEach(item => activities.push(item));
-        } else {
-          activities.push({
-            key: 'kingposts',
-            kind: 'kingposts',
-            label: 'KingPosts',
-            countUnit: 'Kingpost',
-            plotLabel: '',
-            rows: kingRows
-          });
-        }
-      }
-
-      const pushScopedLinearActivity = (rows, activityLabel, countUnit) => {
+      const pushScopedLinearActivity = (rows, activityLabel, countUnit, family = 'linear') => {
         if (!rows.length) return;
         if (segmentByPlot) {
           const byPlot = new Map();
@@ -2047,7 +2138,7 @@
             if (!byPlot.has(plotLabel)) {
               byPlot.set(plotLabel, {
                 key: `${normalizePileElementTypeKey(activityLabel)}__${plotLabel}`,
-                kind: 'linear',
+                kind: family,
                 label: activityLabel,
                 countUnit,
                 plotLabel,
@@ -2063,7 +2154,7 @@
         }
         activities.push({
           key: normalizePileElementTypeKey(activityLabel),
-          kind: 'linear',
+          kind: family,
           label: activityLabel,
           countUnit,
           plotLabel: '',
@@ -2071,7 +2162,32 @@
         });
       };
 
-      pushScopedLinearActivity(anchorScopeRows, 'Anchors', 'Anchor');
+      const kingPreDrillingRows = buildLinearKpiRows(kingRows, {
+        getExecutedDate: row => row?.drillingEnd || row?.drillingStart || '',
+        getDepth: row => Number(row?.asbuiltDepth ?? row?.rig1Depth ?? row?.designDepthDrilling ?? 0) || 0,
+        getMachine: row => normalizeText(row?.rig1) || ''
+      });
+      const kingInstallationRows = buildLinearKpiRows(kingRows, {
+        getExecutedDate: row => row?.beamInstallation || '',
+        getDepth: row => Number(row?.asbuiltDepth ?? row?.rig1Depth ?? row?.designDepthDrilling ?? 0) || 0,
+        getMachine: row => normalizeText(row?.rig1) || ''
+      });
+      pushScopedLinearActivity(kingPreDrillingRows, 'KingPost Pre-Drilling', 'Kingpost', 'kingposts');
+      pushScopedLinearActivity(kingInstallationRows, 'KingPost Installation', 'Kingpost', 'kingposts');
+
+      const anchorInstallationRows = buildLinearKpiRows(anchorScopeRows, {
+        getExecutedDate: row => row?.installationDate || '',
+        getDepth: row => Number(row?.asbuilt_depth) || 0,
+        getMachine: row => normalizeText(row?.machine) || ''
+      });
+      const anchorStressingRows = buildLinearKpiRows(anchorScopeRows, {
+        getExecutedDate: row => row?.prestressingDate || '',
+        getDepth: row => Number(row?.asbuilt_depth) || 0,
+        getMachine: row => normalizeText(row?.machine) || ''
+      });
+      pushScopedLinearActivity(anchorInstallationRows, 'Anchor Installation', 'Anchor');
+      pushScopedLinearActivity(anchorStressingRows, 'Anchor Stressing', 'Anchor');
+
       pushScopedLinearActivity(secantScopeRows, 'Secant Piles', 'SecantPile');
 
       return activities;
@@ -2178,21 +2294,10 @@
       if (!raw) return '';
       const d = new Date(raw);
       if (Number.isNaN(d.getTime())) return '';
-      const hasExplicitTimezone = hasExplicitTimezoneSuffix(raw);
       if (overviewDateMode === 'calendar') {
-        return hasExplicitTimezone ? formatDateKeyInTimezone(d) : formatLocalDateKey(d);
+        return formatDateKeyInTimezone(d);
       }
-      const totalMinutes = hasExplicitTimezone
-        ? (d.getUTCHours() * 60 + d.getUTCMinutes())
-        : (d.getHours() * 60 + d.getMinutes());
-      if (totalMinutes < (7 * 60)) {
-        if (hasExplicitTimezone) {
-          d.setUTCDate(d.getUTCDate() - 1);
-        } else {
-          d.setDate(d.getDate() - 1);
-        }
-      }
-      return hasExplicitTimezone ? d.toISOString().slice(0, 10) : formatLocalDateKey(d);
+      return getShiftDateKeyInTimezone(d, 7);
     }
 
     function isKingPostMetricRow(row, metric) {
@@ -4102,6 +4207,73 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       });
     }
 
+    function getPileDrillingDateKey(row) {
+      const raw = row?.asbuilt_drillingEnd || row?.asbuilt_drillingend || row?.asbuilt_DrillingEnd;
+      if (!raw) return '';
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return '';
+      if (overviewDateMode === 'calendar') {
+        return formatDateKeyInTimezone(d);
+      }
+      return getShiftDateKeyInTimezone(d, 7);
+    }
+
+    function buildDrilledLmDataset(rows, mode) {
+      const map = new Map();
+      const drillingRows = rows.filter(row => getPileDrillingDateKey(row));
+      const dates = drillingRows.map(row => getPileDrillingDateKey(row)).filter(Boolean).sort();
+      if (!dates.length) return [];
+
+      const firstKey = periodKey(dates[0], chartGranularity);
+      const rangeEndKey = overviewDateMode === 'calendar' ? todayKey() : previousDayKey();
+      const lastKey = periodKey(rangeEndKey, chartGranularity);
+      let cursor = new Date(`${firstKey}T00:00:00Z`);
+      const end = new Date(`${lastKey}T00:00:00Z`);
+
+      while (cursor <= end) {
+        const key = cursor.toISOString().slice(0, 10);
+        map.set(key, { date: key, value: 0, executedCount: 0, items: [] });
+        cursor = incrementPeriod(cursor, chartGranularity);
+      }
+
+      drillingRows.forEach(row => {
+        const date = getPileDrillingDateKey(row);
+        if (!date) return;
+        const key = periodKey(date, chartGranularity);
+        if (!map.has(key)) return;
+        const item = map.get(key);
+        const depth = Number(row.asbuilt_depth ?? row.design_depth ?? 0) || 0;
+        item.value += depth;
+        item.executedCount += 1;
+        item.items.push({
+          id: normalizeText(row.id) || '-',
+          machine: normalizeText(row.machine) || '-',
+          date
+        });
+      });
+
+      let cumulative = 0;
+      return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)).map(item => {
+        cumulative += item.value;
+        return {
+          date: item.date,
+          value: mode === 'daily' ? item.value : cumulative,
+          dayValue: item.value,
+          executedCount: item.executedCount,
+          items: item.items,
+          cumulative
+        };
+      });
+    }
+
+    function indexSeriesByDate(series) {
+      const byDate = new Map();
+      (Array.isArray(series) ? series : []).forEach(point => {
+        if (point?.date) byDate.set(point.date, point);
+      });
+      return byDate;
+    }
+
     function svgEl(tag, attrs = {}) {
       const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
       Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
@@ -4112,22 +4284,66 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       while (node.firstChild) node.removeChild(node.firstChild);
     }
 
+    function getOverviewActivityPalette(project = selectedProject) {
+      const hasKingPosts = overviewActivityMode === 'kingposts' && getKingPostRowsForProject(project).length > 0;
+      const isAnchors = overviewActivityMode === 'anchors' && getAnchorRowsForProject(project).length > 0;
+      if (hasKingPosts) {
+        return {
+          dailyBarFill: 'url(#barGradientKingpost)',
+          cumulativeLineColor: 'rgba(96,165,250,0.95)',
+          cumulativeAreaColor: 'rgba(96,165,250,0.14)',
+          cumulativeDotColor: 'rgba(147,197,253,0.98)',
+          cumulativeGlowColor: 'rgba(96,165,250,0.24)'
+        };
+      }
+      if (isAnchors) {
+        return {
+          dailyBarFill: 'url(#barGradientAnchor)',
+          cumulativeLineColor: 'rgba(255,178,107,0.96)',
+          cumulativeAreaColor: 'rgba(255,178,107,0.16)',
+          cumulativeDotColor: 'rgba(255,207,150,0.98)',
+          cumulativeGlowColor: 'rgba(255,178,107,0.24)'
+        };
+      }
+      return {
+        dailyBarFill: 'url(#barGradient)',
+        cumulativeLineColor: 'rgba(142,240,191,0.95)',
+        cumulativeAreaColor: 'rgba(142,240,191,0.12)',
+        cumulativeDotColor: 'rgba(142,240,191,1)',
+        cumulativeGlowColor: 'rgba(142,240,191,0.22)',
+        drilledBarFill: 'rgba(125, 189, 255, 0.55)',
+        drilledLineColor: 'rgba(125,189,255,0.95)',
+        drilledAreaColor: 'rgba(125,189,255,0.08)',
+        drilledDotColor: 'rgba(186,220,255,0.95)'
+      };
+    }
+
     function renderChart(rows, project = selectedProject) {
       const data = buildChartDataset(rows, chartMetric, chartMode);
+      const drilledLmData = (overviewActivityMode === 'piles' && chartMetric === 'lm')
+        ? buildDrilledLmDataset(rows, chartMode)
+        : [];
+      const drilledLmByDate = indexSeriesByDate(drilledLmData);
       const plannedData = (chartMode === 'cumulative' && chartMetric === 'piles') ? buildPlannedCurve(rows, data, project) : [];
-      const isKingPosts = overviewActivityMode === 'kingposts' && getKingPostRowsForProject(project).length > 0;
-      const dailyBarFill = isKingPosts ? 'url(#barGradientKingpost)' : 'url(#barGradient)';
-      const cumulativeLineColor = isKingPosts ? 'rgba(96,165,250,0.95)' : 'rgba(142,240,191,0.95)';
-      const cumulativeAreaColor = isKingPosts ? 'rgba(96,165,250,0.14)' : 'rgba(142,240,191,0.12)';
-      const cumulativeDotColor = isKingPosts ? 'rgba(147,197,253,0.98)' : 'rgba(142,240,191,1)';
-      const cumulativeGlowColor = isKingPosts ? 'rgba(96,165,250,0.24)' : 'rgba(142,240,191,0.22)';
+      const palette = getOverviewActivityPalette(project);
+      const {
+        dailyBarFill,
+        cumulativeLineColor,
+        cumulativeAreaColor,
+        cumulativeDotColor,
+        cumulativeGlowColor,
+        drilledBarFill,
+        drilledLineColor,
+        drilledAreaColor,
+        drilledDotColor
+      } = palette;
       if (els.overviewSeriesLegend) {
         const showLegend = chartMode === 'cumulative' && chartMetric === 'piles' && plannedData.length > 0;
         els.overviewSeriesLegend.hidden = !showLegend;
       }
       const titleMetric = metricLabel(chartMetric);
       const granularityLabel = chartGranularity === 'day' ? 'Day' : (chartGranularity === 'week' ? 'Week' : 'Month');
-      const useTwoRowMobileDayAxis = window.matchMedia('(max-width: 767px)').matches && chartGranularity === 'day';
+      const useTwoRowTabletDayAxis = window.matchMedia('(max-width: 1180px)').matches && chartGranularity === 'day';
       els.chartTitle.textContent = `${chartMode === 'daily' ? 'Daily' : 'Cumulative'} ${titleMetric} by ${granularityLabel}`;
       els.chartTag.textContent = chartMode === 'daily' ? 'Daily' : 'Cumulative';
       clearSvgGroup(els.chartGrid);
@@ -4146,7 +4362,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const left = 58;
       const right = 20;
       const top = 20;
-      const bottom = useTwoRowMobileDayAxis ? 74 : 56;
+      const bottom = useTwoRowTabletDayAxis ? 78 : 56;
       const innerH = height - top - bottom;
       const visibleInnerW = width - left - right;
       const scrollNeeded = data.length > visiblePoints;
@@ -4155,7 +4371,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         : visibleInnerW / Math.max(data.length, 1);
       const innerW = scrollNeeded ? stepX * data.length : visibleInnerW;
       const svgWidth = left + innerW + right;
-      const maxVal = Math.max(1, ...data.map(d => d.value), ...plannedData.map(d => d.value || 0));
+      const maxVal = Math.max(1, ...data.map(d => d.value), ...drilledLmData.map(d => d.value || 0), ...plannedData.map(d => d.value || 0));
       const barW = Math.min(34, Math.max(16, stepX * 0.52));
 
       els.chartSvg.setAttribute('viewBox', `0 0 ${svgWidth} ${height}`);
@@ -4193,8 +4409,13 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           const x = left + stepX * idx + stepX / 2;
           const h = (d.value / maxVal) * (innerH - 8);
           const y = top + innerH - h;
+          const drilledPoint = drilledLmByDate.get(d.date) || null;
+          const hasDrilledCompanion = !!drilledPoint;
+          const drilledH = hasDrilledCompanion ? (drilledPoint.value / maxVal) * (innerH - 8) : 0;
+          const drilledY = top + innerH - drilledH;
+          const drilledW = Math.max(8, Math.min(14, barW * 0.42));
           const bar = svgEl('rect', {
-            x: x - barW / 2,
+            x: x - barW / 2 + (hasDrilledCompanion ? barW * 0.16 : 0),
             y: top + innerH,
             width: barW,
             height: 0,
@@ -4203,24 +4424,44 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             style: `fill:${dailyBarFill};`
           });
           els.chartSeries.appendChild(bar);
+          let drilledBar = null;
+          if (hasDrilledCompanion) {
+            drilledBar = svgEl('rect', {
+              x: x - barW / 2 - drilledW * 0.95,
+              y: top + innerH,
+              width: drilledW,
+              height: 0,
+              rx: Math.min(5, drilledW / 2),
+              class: 'bar-shape',
+              style: `fill:${drilledBarFill};`
+            });
+            els.chartSeries.appendChild(drilledBar);
+          }
           const label = svgEl('text', { x, y: y - 8, class: 'bar-label', style: 'opacity:0; transition:opacity 180ms ease;' });
           label.textContent = chartMetric === 'piles' ? d.executedCount : Number(d.value.toFixed(1)).toString();
           els.chartLabels.appendChild(label);
-          animatedBars.push({ bar, label, finalY: y, finalH: h, idx });
-          const hit = svgEl('rect', { x: x - barW / 2, y, width: barW, height: h, class: 'hover-target' });
+          animatedBars.push({ bar, drilledBar, label, finalY: y, finalH: h, drilledFinalH: drilledH, idx });
+          const hit = svgEl('rect', {
+            x: hasDrilledCompanion ? (x - barW / 2 - drilledW - 4) : (x - barW / 2),
+            y: Math.min(y, drilledY),
+            width: hasDrilledCompanion ? (barW + drilledW + 8) : barW,
+            height: Math.max(h, drilledH),
+            class: 'hover-target'
+          });
           hit.dataset.anchorX = x;
-          hit.dataset.anchorY = y;
-          hit.addEventListener('mousemove', evt => showTooltip(evt, d, null, { anchorX: x, anchorY: y }));
+          hit.dataset.anchorY = Math.min(y, drilledY);
+          hit.addEventListener('mousemove', evt => showTooltip(evt, d, null, { anchorX: x, anchorY: Math.min(y, drilledY), secondaryPoint: drilledPoint }));
           hit.addEventListener('mouseleave', hideTooltip);
           els.chartSeries.appendChild(hit);
-          if (useTwoRowMobileDayAxis) {
+          if (useTwoRowTabletDayAxis) {
             const monthText = formatMonthShortLabel(d.date);
             const dayText = formatDayNumberLabel(d.date);
             if (!currentRun || currentRun.month !== monthText) {
-              currentRun = { month: monthText, startX: x, endX: x };
+              currentRun = { month: monthText, startX: x, endX: x, startIndex: idx, endIndex: idx };
               monthRuns.push(currentRun);
             } else {
               currentRun.endX = x;
+              currentRun.endIndex = idx;
             }
             const dayAxis = svgEl('text', { x, y: height - 18, class: 'axis-label', 'text-anchor': 'middle' });
             dayAxis.textContent = dayText;
@@ -4232,7 +4473,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           }
         });
 
-        if (useTwoRowMobileDayAxis && monthRuns.length) {
+        if (useTwoRowTabletDayAxis && monthRuns.length) {
           monthRuns.forEach(run => {
             const monthAxis = svgEl('text', {
               x: (run.startX + run.endX) / 2,
@@ -4244,6 +4485,23 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             monthAxis.textContent = run.month;
             els.chartXAxis.appendChild(monthAxis);
           });
+          if (monthRuns.length > 1) {
+            for (let i = 1; i < monthRuns.length; i += 1) {
+              const prevRun = monthRuns[i - 1];
+              const nextRun = monthRuns[i];
+              const separatorX = (prevRun.endX + nextRun.startX) / 2;
+              const monthDivider = svgEl('line', {
+                x1: separatorX,
+                y1: height - 50,
+                x2: separatorX,
+                y2: top + innerH,
+                stroke: 'rgba(255,255,255,0.12)',
+                'stroke-width': '1',
+                'stroke-dasharray': '3 8'
+              });
+              els.chartGrid.appendChild(monthDivider);
+            }
+          }
         }
 
         const startTime = performance.now();
@@ -4261,6 +4519,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             const y = (top + innerH) - h;
             item.bar.setAttribute('y', y);
             item.bar.setAttribute('height', h);
+            if (item.drilledBar) {
+              const drilledH = item.drilledFinalH * eased;
+              const drilledY = (top + innerH) - drilledH;
+              item.drilledBar.setAttribute('y', drilledY);
+              item.drilledBar.setAttribute('height', drilledH);
+            }
             item.label.style.opacity = local > 0.82 ? '1' : '0';
           });
           if (running) requestAnimationFrame(frame);
@@ -4272,11 +4536,17 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         let path = '';
         let area = `M ${left} ${top + innerH}`;
         let plannedPath = '';
+        let drilledPath = '';
         data.forEach((d, idx) => {
           const x = left + stepX * idx + stepX / 2;
           const y = top + innerH - (d.value / maxVal) * (innerH - 10);
           path += `${idx === 0 ? 'M' : 'L'} ${x} ${y} `;
           area += ` L ${x} ${y}`;
+          const drilledPoint = drilledLmByDate.get(d.date) || null;
+          if (drilledPoint) {
+            const drilledY = top + innerH - (drilledPoint.value / maxVal) * (innerH - 10);
+            drilledPath += `${drilledPath ? 'L' : 'M'} ${x} ${drilledY} `;
+          }
 
           if (plannedData[idx]) {
             const plannedY = top + innerH - (plannedData[idx].value / maxVal) * (innerH - 10);
@@ -4296,17 +4566,18 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           const hit = svgEl('rect', { x: x - stepX / 2, y: top, width: stepX, height: innerH + bottom, class: 'hover-target' });
           hit.dataset.anchorX = x;
           hit.dataset.anchorY = y;
-          hit.addEventListener('mousemove', evt => showTooltip(evt, d, plannedData[idx], { anchorX: x, anchorY: y, showGuide: true }));
+          hit.addEventListener('mousemove', evt => showTooltip(evt, d, plannedData[idx], { anchorX: x, anchorY: y, showGuide: true, secondaryPoint: drilledPoint }));
           hit.addEventListener('mouseleave', hideTooltip);
           els.chartSeries.appendChild(hit);
-          if (useTwoRowMobileDayAxis) {
+          if (useTwoRowTabletDayAxis) {
             const monthText = formatMonthShortLabel(d.date);
             const dayText = formatDayNumberLabel(d.date);
             if (!currentRun || currentRun.month !== monthText) {
-              currentRun = { month: monthText, startX: x, endX: x };
+              currentRun = { month: monthText, startX: x, endX: x, startIndex: idx, endIndex: idx };
               monthRuns.push(currentRun);
             } else {
               currentRun.endX = x;
+              currentRun.endIndex = idx;
             }
             const dayAxis = svgEl('text', { x, y: height - 18, class: 'axis-label', 'text-anchor': 'middle' });
             dayAxis.textContent = dayText;
@@ -4317,7 +4588,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             els.chartXAxis.appendChild(xLabel);
           }
         });
-        if (useTwoRowMobileDayAxis && monthRuns.length) {
+        if (useTwoRowTabletDayAxis && monthRuns.length) {
           monthRuns.forEach(run => {
             const monthAxis = svgEl('text', {
               x: (run.startX + run.endX) / 2,
@@ -4329,6 +4600,23 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             monthAxis.textContent = run.month;
             els.chartXAxis.appendChild(monthAxis);
           });
+          if (monthRuns.length > 1) {
+            for (let i = 1; i < monthRuns.length; i += 1) {
+              const prevRun = monthRuns[i - 1];
+              const nextRun = monthRuns[i];
+              const separatorX = (prevRun.endX + nextRun.startX) / 2;
+              const monthDivider = svgEl('line', {
+                x1: separatorX,
+                y1: height - 50,
+                x2: separatorX,
+                y2: top + innerH,
+                stroke: 'rgba(255,255,255,0.12)',
+                'stroke-width': '1',
+                'stroke-dasharray': '3 8'
+              });
+              els.chartGrid.appendChild(monthDivider);
+            }
+          }
         }
         const lastX = left + stepX * (data.length - 1) + stepX / 2;
         area += ` L ${lastX} ${top + innerH} Z`;
@@ -4339,6 +4627,20 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           style: `fill:${cumulativeAreaColor}; opacity:0; transition:opacity 260ms ease;`
         });
         els.chartSeries.appendChild(areaEl);
+
+        let drilledEl = null;
+        if (drilledPath) {
+          drilledEl = svgEl('path', {
+            d: drilledPath.trim(),
+            fill: 'none',
+            stroke: drilledLineColor,
+            'stroke-width': '2.2',
+            'stroke-dasharray': '6 6',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round'
+          });
+          els.chartSeries.appendChild(drilledEl);
+        }
 
         let plannedEl = null;
         if (plannedPath) {
@@ -4372,6 +4674,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         requestAnimationFrame(() => {
           areaEl.style.opacity = '1';
           animatePath(lineEl);
+          if (drilledEl) animatePath(drilledEl);
           if (plannedEl) animatePath(plannedEl);
           Array.from(els.chartLabels.children).forEach((label, idx) => {
             label.style.opacity = '0';
@@ -4436,6 +4739,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
     function showTooltip(evt, dataPoint, plannedPoint = null, options = {}) {
       const wrap = els.chartWrap;
+      const secondaryPoint = options.secondaryPoint || null;
       let html = `<div class="tooltip-title">${periodTitle(dataPoint.date)}</div>`;
       if (chartMode === 'daily') {
         if (overviewActivityMode === 'kingposts') {
@@ -4459,6 +4763,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         } else {
           const unit = metricUnit(chartMetric);
           html += `<div class="tooltip-row"><span>${metricLabel(chartMetric)}</span><strong>${Number(dataPoint.value.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
+          if (chartMetric === 'lm' && overviewActivityMode === 'piles' && secondaryPoint) {
+            html += `<div class="tooltip-row"><span>Drilled Lm</span><strong>${Number(secondaryPoint.value.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
+          }
           html += `<div class="tooltip-row"><span>Piles Executed</span><strong>${dataPoint.executedCount}</strong></div>`;
         }
       } else {
@@ -4468,6 +4775,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           : 'Executed This ';
         html += `<div class="tooltip-row"><span>${executedLabel}${chartGranularity === 'day' ? 'Date' : 'Period'}</span><strong>${Number(dataPoint.dayValue.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
         html += `<div class="tooltip-row"><span>Cumulative</span><strong>${Number(dataPoint.value.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
+        if (chartMetric === 'lm' && overviewActivityMode === 'piles' && secondaryPoint) {
+          html += `<div class="tooltip-row"><span>Drilled This ${chartGranularity === 'day' ? 'Date' : 'Period'}</span><strong>${Number(secondaryPoint.dayValue.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
+          html += `<div class="tooltip-row"><span>Drilled Cumulative</span><strong>${Number(secondaryPoint.value.toFixed(1)).toLocaleString()} ${unit}</strong></div>`;
+        }
         if (chartMetric === 'piles' && plannedPoint) {
           html += `<div class="tooltip-row"><span>Planned</span><strong>${Number(plannedPoint.value.toFixed(1)).toLocaleString()} piles</strong></div>`;
           html += `<div class="tooltip-row"><span>Variance</span><strong>${Number((dataPoint.value - plannedPoint.value).toFixed(1)).toLocaleString()} piles</strong></div>`;
@@ -4503,6 +4814,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const wrap = els.chartWrapCumulative;
       const tooltip = els.chartTooltipCumulative;
       if (!wrap || !tooltip || !dataPoint) return;
+      const secondaryPoint = options.secondaryPoint || null;
 
       const unit = metricUnit(chartMetric);
       const isPiles = chartMetric === 'piles';
@@ -4517,6 +4829,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         <div class="tooltip-title">${periodTitle(dataPoint.date)}</div>
         <div class="tooltip-row"><span>${metricLabel(chartMetric)} This ${chartGranularity === 'day' ? 'Date' : 'Period'}</span><strong>${periodValue}</strong></div>
         <div class="tooltip-row"><span>Cumulative</span><strong>${cumulativeValue}</strong></div>
+        ${chartMetric === 'lm' && overviewActivityMode === 'piles' && secondaryPoint ? `
+          <div class="tooltip-row"><span>Drilled This ${chartGranularity === 'day' ? 'Date' : 'Period'}</span><strong>${Number(secondaryPoint.dayValue || 0).toFixed(1).toLocaleString()} ${unit}</strong></div>
+          <div class="tooltip-row"><span>Drilled Cumulative</span><strong>${Number(secondaryPoint.value || 0).toFixed(1).toLocaleString()} ${unit}</strong></div>
+        ` : ''}
       `;
       tooltip.classList.add('visible');
       wrap.appendChild(tooltip);
@@ -4567,12 +4883,14 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     function renderCumulativeChart(rows, project = selectedProject) {
       if (!els.chartSvgCumulative || !els.chartWrapCumulative) return;
       const data = buildChartDataset(rows, chartMetric, 'cumulative');
-      const isKingPosts = overviewActivityMode === 'kingposts' && getKingPostRowsForProject(project).length > 0;
+      const drilledLmData = (overviewActivityMode === 'piles' && chartMetric === 'lm')
+        ? buildDrilledLmDataset(rows, 'cumulative')
+        : [];
+      const drilledLmByDate = indexSeriesByDate(drilledLmData);
       const titleMetric = metricLabel(chartMetric);
       const granularityLabel = chartGranularity === 'day' ? 'Day' : (chartGranularity === 'week' ? 'Week' : 'Month');
-      const cumulativeLineColor = isKingPosts ? 'rgba(96,165,250,0.95)' : 'rgba(142,240,191,0.95)';
-      const cumulativeAreaColor = isKingPosts ? 'rgba(96,165,250,0.14)' : 'rgba(142,240,191,0.12)';
-      const cumulativeDotColor = isKingPosts ? 'rgba(147,197,253,0.98)' : 'rgba(142,240,191,0.95)';
+      const palette = getOverviewActivityPalette(project);
+      const { cumulativeLineColor, cumulativeAreaColor, cumulativeDotColor, drilledLineColor, drilledDotColor } = palette;
       if (els.chartTitleCumulative) els.chartTitleCumulative.textContent = `Cumulative ${titleMetric} by ${granularityLabel}`;
       if (els.chartTagCumulative) els.chartTagCumulative.textContent = 'Cumulative';
 
@@ -4596,7 +4914,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const innerW = width - left - right;
       const stepX = innerW / Math.max(data.length - 1, 1);
       const svgWidth = width;
-      const maxVal = Math.max(1, ...data.map(d => d.value));
+      const maxVal = Math.max(1, ...data.map(d => d.value), ...drilledLmData.map(d => d.value || 0));
       const pointCount = data.length;
       const markerRadius = pointCount > 80 ? 2.2 : pointCount > 55 ? 2.6 : pointCount > 32 ? 3 : 3.6;
       const markerOpacity = pointCount > 80 ? 0.74 : pointCount > 55 ? 0.8 : 0.9;
@@ -4628,11 +4946,17 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       let path = '';
       let area = '';
       const hoverHits = [];
+      let drilledPath = '';
       data.forEach((d, idx) => {
         const x = left + stepX * idx;
         const y = top + innerH - (d.value / maxVal) * (innerH - 6);
         path += `${idx === 0 ? 'M' : ' L'} ${x} ${y}`;
         area += `${idx === 0 ? 'M' : ' L'} ${x} ${y}`;
+        const drilledPoint = drilledLmByDate.get(d.date) || null;
+        if (drilledPoint) {
+          const drilledY = top + innerH - (drilledPoint.value / maxVal) * (innerH - 6);
+          drilledPath += `${drilledPath ? ' L' : 'M'} ${x} ${drilledY}`;
+        }
 
         const dot = svgEl('circle', {
           cx: x,
@@ -4646,7 +4970,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         els.chartSeriesCumulative.appendChild(dot);
 
         const hit = svgEl('rect', { x: x - stepX / 2, y: top, width: Math.max(stepX, 24), height: innerH + bottom, fill: 'transparent', class: 'hover-target' });
-        hit.addEventListener('mousemove', () => showCumulativeOverviewTooltip(d, { anchorX: x, anchorY: y, showGuide: true }));
+        hit.addEventListener('mousemove', () => showCumulativeOverviewTooltip(d, { anchorX: x, anchorY: y, showGuide: true, secondaryPoint: drilledPoint }));
         hit.addEventListener('mouseleave', hideCumulativeOverviewTooltip);
         hoverHits.push(hit);
       });
@@ -4666,6 +4990,21 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         style: 'pointer-events:none;'
       });
       els.chartSeriesCumulative.appendChild(lineEl);
+
+      let drilledLineEl = null;
+      if (drilledPath) {
+        drilledLineEl = svgEl('path', {
+          d: drilledPath.trim(),
+          fill: 'none',
+          stroke: drilledLineColor,
+          'stroke-width': '2.2',
+          'stroke-dasharray': '6 6',
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          style: 'pointer-events:none;'
+        });
+        els.chartSeriesCumulative.appendChild(drilledLineEl);
+      }
 
       hoverHits.forEach(hit => els.chartSeriesCumulative.appendChild(hit));
 
@@ -4709,6 +5048,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         areaEl.style.transition = `opacity ${Math.max(180, cumulativeDuration - 120)}ms ease`;
         areaEl.style.opacity = '1';
         animatePath(lineEl, cumulativeDuration);
+        if (drilledLineEl) animatePath(drilledLineEl, Math.max(260, cumulativeDuration - 40));
         Array.from(els.chartLabelsCumulative.children).forEach((label, idx) => {
           label.style.transition = 'opacity 180ms ease';
           setTimeout(() => { label.style.opacity = '1'; }, 200 + idx * 40);
@@ -4727,15 +5067,17 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const rowsHtml = [];
       activities.forEach(activity => {
         const isKingPosts = activity.kind === 'kingposts';
-        const isLinear = activity.kind === 'linear';
+        const isLinear = activity.kind === 'linear' || isKingPosts;
         const isPiles = !isKingPosts && !isLinear;
         const plotSuffix = activity.plotLabel ? ` · ${activity.plotLabel}` : '';
         const label = `${activity.label}${plotSuffix}`;
         const countUnit = activity.countUnit;
-        const dotClass = isKingPosts ? 'kingposts' : '';
-        const stats = isKingPosts ? computeKingPostStats(activity.rows) : computeStats(activity.rows, project);
+        const dotClass = isKingPosts
+          ? 'kingposts'
+          : (normalizeText(activity.label).toLowerCase().startsWith('anchor') ? 'anchors' : '');
+        const stats = computeStats(activity.rows, project);
 
-        const executed = isKingPosts ? (stats.predrilled ?? 0) : stats.completed;
+        const executed = stats.completed;
         const total = stats.total;
         const remaining = Math.max(0, total - executed);
         const pct = total ? (executed / total) * 100 : 0;
@@ -4754,12 +5096,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
                 <span><strong>${(stats.yesterdayLm || 0).toFixed(1)}</strong><small>Lm</small></span>
               </div>
             `
-          : `
-            <div class="overview-dual-metric">
-              <span><strong>${stats.yesterdayPredrilled || 0}</strong><small>Kingpost</small></span>
-              <span><strong>${(stats.yesterdayKpLm || 0).toFixed(1)}</strong><small>Lm</small></span>
-            </div>
-          `;
+          : ``;
 
         const avgText = isPiles
           ? (
@@ -4779,12 +5116,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
                 <span><strong>${(stats.avgLm || 0).toFixed(1)}</strong><small>Lm/CD</small></span>
               </div>
             `
-          : `
-            <div class="overview-dual-metric">
-              <span><strong>${(stats.avgPredrilled || 0).toFixed(1)}</strong><small>Kingpost/CD</small></span>
-              <span><strong>${(stats.avgLm || 0).toFixed(1)}</strong><small>Lm/CD</small></span>
-            </div>
-          `;
+          : ``;
 
         let etaDateLabel = '-';
         let etaPeriodLabel = '-';
@@ -4797,15 +5129,6 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           if (stats.etaDate) {
             etaDateLabel = formatDateLabel(stats.etaDate);
             etaPeriodLabel = `${(stats.etaMonths ?? 0).toFixed(1)} mo`;
-          }
-        } else {
-          const rate = Number(stats.avgPredrilled || 0);
-          if (remaining > 0 && rate > 0) {
-            const workingDaysNeeded = Math.ceil(remaining / rate);
-            const etaDate = addWorkingDays(todayKey(), workingDaysNeeded);
-            const etaMonths = monthsBetween(todayKey(), etaDate);
-            etaDateLabel = formatDateLabel(etaDate);
-            etaPeriodLabel = `${etaMonths.toFixed(1)} mo`;
           }
         }
 
@@ -6124,6 +6447,392 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       renderTimelinePage(selectedProject);
     }
 
+    function closeCostSheetModal() {
+      if (!els.costSheetModal) return;
+      els.costSheetModal.hidden = true;
+      els.costSheetModal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('cost-sheet-open');
+    }
+
+    function formatCostSheetMoney(value) {
+      return Number.isFinite(value)
+        ? `${Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} AED`
+        : '-';
+    }
+
+    function buildCostSheetModel(periodType, periodValue) {
+      const context = latestCostSheetContext;
+      if (!context) return null;
+
+      const roleDefs = [
+        { key: 'pm', label: 'Project Manager', aliases: ['projectmanager', 'project manager'] },
+        { key: 'se', label: 'Site Engineers', aliases: ['siteengineer', 'site engineer', 'siteenginner'] },
+        { key: 'foreman', label: 'Foreman', aliases: ['foreman'] },
+        { key: 'op', label: 'Equipment Operators', aliases: ['operator', 'operators'] },
+        { key: 'vb', label: 'Vibro Operators', aliases: ['vibro operator', 'vibrooperator', 'vibro_operator'] },
+        { key: 'rig', label: 'Riggers', aliases: ['riggers', 'rigger'] },
+        { key: 'we', label: 'Welders', aliases: ['welder', 'welders'] },
+        { key: 'me', label: 'Mechanic', aliases: ['mechanic', 'mechanics'] },
+        { key: 'hl', label: 'Helpers', aliases: ['helpers', 'helper'] }
+      ];
+
+      const weekNumber = periodType === 'week' ? Number(periodValue) : null;
+      const weekMeta = periodType === 'week' ? context.weekDataMap.get(weekNumber) || null : null;
+      const exactDate = periodType === 'lastday' ? context.lastDayDateKey : '';
+
+      const sourceDates = new Set();
+      context.projectWideManpowerRows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (!dateKey) return;
+        if (periodType === 'week') {
+          if (parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber) sourceDates.add(dateKey);
+        } else if (dateKey === exactDate) {
+          sourceDates.add(dateKey);
+        }
+      });
+      context.projectWideEquipmentRows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (!dateKey) return;
+        if (periodType === 'week') {
+          if (parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber) sourceDates.add(dateKey);
+        } else if (dateKey === exactDate) {
+          sourceDates.add(dateKey);
+        }
+      });
+      context.projectWidePileRows.forEach(row => {
+        const dateKey = getOverviewDateKey(row);
+        if (!dateKey) return;
+        if (periodType === 'week') {
+          if (parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber) sourceDates.add(dateKey);
+        } else if (dateKey === exactDate) {
+          sourceDates.add(dateKey);
+        }
+      });
+      context.projectWideSecantRows.forEach(row => {
+        const dateKey = getSecantExecutionDateKey(row);
+        if (!dateKey) return;
+        if (periodType === 'week') {
+          if (parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber) sourceDates.add(dateKey);
+        } else if (dateKey === exactDate) {
+          sourceDates.add(dateKey);
+        }
+      });
+
+      let dates = Array.from(sourceDates).sort();
+      const chargedDays = periodType === 'week'
+        ? Math.max(weekMeta?.days || 0, dates.length || 0)
+        : (exactDate ? 1 : 0);
+      if (periodType === 'week' && (!dates.length || dates.length < chargedDays)) {
+        const templateDates = getISOWeekDateKeys(weekNumber, context.yearHint).slice(0, Math.max(chargedDays, 0));
+        dates = Array.from(new Set([...templateDates, ...dates])).sort();
+      }
+      if (periodType === 'lastday' && exactDate) dates = [exactDate];
+
+      const manpowerByDate = new Map();
+      context.projectWideManpowerRows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (dateKey) manpowerByDate.set(dateKey, row);
+      });
+
+      const equipmentByDate = new Map();
+      context.projectWideEquipmentRows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (!dateKey) return;
+        if (!equipmentByDate.has(dateKey)) equipmentByDate.set(dateKey, []);
+        equipmentByDate.get(dateKey).push(row);
+      });
+
+      const templateWeekSource = periodType === 'week' ? context.weeklySourceData[weekNumber] || null : null;
+      const fallbackCountsForDate = dateKey => {
+        if (normalizeText(context.project).toLowerCase() !== 'titania') return { rig: 0, vb: 0, crane: 0 };
+        if (normalizeDateString(dateKey) >= '2026-04-03') return { rig: 0, vb: 0, crane: 0 };
+        return { rig: 1, vb: 1, crane: 1 };
+      };
+
+        const laborDays = dates.map(dateKey => {
+          const row = manpowerByDate.get(dateKey);
+          const templateMode = !row && templateWeekSource && !Array.isArray(templateWeekSource.dailyRows);
+          const rows = roleDefs.map(def => {
+          const headcount = row
+            ? getManpowerCountValue(row, def.aliases)
+            : (templateMode ? (Number(templateWeekSource[def.key]) || 0) : 0);
+          const dailyRate = Number(context.dailyRates[def.key]) || 0;
+          return {
+            label: def.label,
+            headcount,
+            dailyRate,
+            chargedDays: headcount > 0 ? 1 : 0,
+            amount: headcount * dailyRate
+          };
+          }).filter(item => item.headcount > 0 || item.amount > 0);
+          return {
+            date: dateKey,
+            rows,
+            quantity: rows.reduce((sum, item) => sum + (Number(item.headcount) || 0), 0),
+            subtotal: rows.reduce((sum, item) => sum + item.amount, 0)
+          };
+        }).filter(day => day.rows.length);
+
+      const equipmentDays = dates.map(dateKey => {
+        const rawItems = equipmentByDate.get(dateKey) || [];
+        const seen = new Set();
+        let rows = rawItems.filter(item => {
+          const key = `${normalizeText(item.type)}|${normalizeText(item.label)}|${normalizeText(item.contractor)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).map(item => ({
+          type: normalizeText(item.type) || 'Equipment',
+          unit: normalizeText(item.label) || '-',
+          contractor: normalizeText(item.contractor) || '-',
+          rentalRate: Number(item.rentalRate) || 0,
+          chargedDays: 1,
+          amount: Number(item.rentalRate) || 0
+        }));
+
+        if (!rows.length && normalizeText(context.project).toLowerCase() === 'titania') {
+          const fallback = fallbackCountsForDate(dateKey);
+          const synthetic = [];
+          for (let i = 0; i < fallback.rig; i += 1) synthetic.push({ type: 'Rig', unit: `Piling Rig ${i + 1}`, contractor: 'Fallback', rentalRate: context.rigRental, chargedDays: 1, amount: context.rigRental });
+          for (let i = 0; i < fallback.vb; i += 1) synthetic.push({ type: 'Vibrator', unit: `Vibrator & Power Pack ${i + 1}`, contractor: 'Fallback', rentalRate: context.vbRental, chargedDays: 1, amount: context.vbRental });
+          for (let i = 0; i < fallback.crane; i += 1) synthetic.push({ type: 'Crane', unit: `Crawler Crane ${i + 1}`, contractor: 'Fallback', rentalRate: context.craneRental, chargedDays: 1, amount: context.craneRental });
+          rows = synthetic;
+          }
+
+          return {
+            date: dateKey,
+            rows,
+            quantity: rows.length,
+            subtotal: rows.reduce((sum, item) => sum + item.amount, 0)
+          };
+        }).filter(day => day.rows.length);
+
+      const pileLm = context.projectWidePileRows
+        .filter(row => {
+          const dateKey = getOverviewDateKey(row);
+          if (!dateKey) return false;
+          if (periodType === 'week') return parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber;
+          return dateKey === exactDate;
+        })
+        .reduce((sum, row) => sum + (Number(row.asbuilt_depth) || Number(row.design_depth) || 0), 0);
+
+      const secantLm = context.projectWideSecantRows
+        .filter(row => {
+          const dateKey = getSecantExecutionDateKey(row);
+          if (!dateKey) return false;
+          if (periodType === 'week') return parseInt(String(getCW(dateKey)).replace(/\D/g, ''), 10) === weekNumber;
+          return dateKey === exactDate;
+        })
+        .reduce((sum, row) => sum + (Number(row.asbuilt_depth) || Number(row.design_depth) || 0), 0);
+
+      const laborSubtotal = laborDays.reduce((sum, day) => sum + day.subtotal, 0);
+      const rentalSubtotal = equipmentDays.reduce((sum, day) => sum + day.subtotal, 0);
+      const indirectSubtotal = context.overheadsDaily * chargedDays;
+      const directSubtotal = laborSubtotal + rentalSubtotal;
+      const totalCost = directSubtotal + indirectSubtotal;
+      const totalExecutedLm = pileLm + secantLm;
+      const costPerLm = totalExecutedLm > 0 ? totalCost / totalExecutedLm : 0;
+
+      return {
+        periodLabel: periodType === 'week' ? `Week ${weekNumber}` : `Last Day - ${formatDateFullLabel(exactDate)}`,
+        periodRange: dates.length > 1 ? `${formatShortDateLabel(dates[0])} to ${formatShortDateLabel(dates[dates.length - 1])}` : (dates[0] ? formatDateFullLabel(dates[0]) : '-'),
+        chargedDays,
+        pileLm,
+        secantLm,
+        totalExecutedLm,
+        laborSubtotal,
+        rentalSubtotal,
+        directSubtotal,
+        indirectSubtotal,
+        totalCost,
+        costPerLm,
+        laborDays,
+        equipmentDays
+      };
+    }
+
+    function openCostSheetModal(periodType, periodValue) {
+      const model = buildCostSheetModel(periodType, periodValue);
+      if (!model || !els.costSheetModal || !els.costSheetBody) return;
+
+      const summaryRows = [];
+      if (model.pileLm > 0) summaryRows.push(`<tr><td>Bored Piles Lm</td><td class="num">${formatNumberOneDecimal(model.pileLm)}</td></tr>`);
+      if (model.secantLm > 0) summaryRows.push(`<tr><td>Secant Piles Lm</td><td class="num">${formatNumberOneDecimal(model.secantLm)}</td></tr>`);
+      summaryRows.push(`<tr><td>Total Executed Lm</td><td class="num">${formatNumberOneDecimal(model.totalExecutedLm)}</td></tr>`);
+      summaryRows.push(`<tr><td>Total Cost</td><td class="num">${formatCostSheetMoney(model.totalCost)}</td></tr>`);
+      summaryRows.push(`<tr class="is-total"><td>Cost / Lm</td><td class="num">${model.totalExecutedLm > 0 ? `${formatNumberOneDecimal(model.costPerLm)} AED/Lm` : '-'}</td></tr>`);
+
+      const renderPivotTable = (days, type) => {
+        const rows = [];
+        days.forEach((day, dayIdx) => {
+          const groupId = `${type}-${dayIdx}`;
+          if (type === 'labor') {
+            rows.push(`
+                <tr class="cost-sheet-group-row" data-cost-group-row="${groupId}">
+                  <td class="cost-sheet-group-cell">
+                  <button type="button" class="cost-sheet-group-toggle" data-cost-group-toggle="${groupId}" aria-expanded="false">+</button>
+                  <span>${formatDateFullLabel(day.date)}</span>
+                </td>
+                <td class="num cost-sheet-group-qty">${day.quantity} Nos</td>
+                <td class="cost-sheet-group-empty"></td>
+                <td class="cost-sheet-group-empty"></td>
+                <td class="num cost-sheet-group-total">${formatCostSheetMoney(day.subtotal)}</td>
+              </tr>
+            `);
+          } else {
+            rows.push(`
+                <tr class="cost-sheet-group-row" data-cost-group-row="${groupId}">
+                  <td class="cost-sheet-group-cell">
+                  <button type="button" class="cost-sheet-group-toggle" data-cost-group-toggle="${groupId}" aria-expanded="false">+</button>
+                  <span>${formatDateFullLabel(day.date)}</span>
+                </td>
+                <td class="cost-sheet-group-meta">${day.quantity} Units</td>
+                <td class="cost-sheet-group-empty"></td>
+                <td class="cost-sheet-group-empty"></td>
+                <td class="num cost-sheet-group-total">${formatCostSheetMoney(day.subtotal)}</td>
+              </tr>
+            `);
+          }
+          day.rows.forEach(row => {
+            if (type === 'labor') {
+              rows.push(`
+                <tr class="cost-sheet-detail-row" data-cost-group-child="${groupId}" hidden>
+                  <td>${escapeHtml(row.label)}</td>
+                  <td class="num">${row.headcount}</td>
+                  <td class="num">${formatCostSheetMoney(row.dailyRate)}</td>
+                  <td class="num">${row.chargedDays}</td>
+                  <td class="num">${formatCostSheetMoney(row.amount)}</td>
+                </tr>
+              `);
+            } else {
+              rows.push(`
+                <tr class="cost-sheet-detail-row" data-cost-group-child="${groupId}" hidden>
+                  <td>${escapeHtml(row.type)}</td>
+                  <td>${escapeHtml(row.unit)}</td>
+                  <td>${escapeHtml(row.contractor === 'Fallback' ? '-' : row.contractor)}</td>
+                  <td class="num">${formatCostSheetMoney(row.rentalRate)}</td>
+                  <td class="num">${formatCostSheetMoney(row.amount)}</td>
+                </tr>
+              `);
+            }
+          });
+          rows.push(`
+            <tr class="cost-sheet-subtotal-row" data-cost-group-child="${groupId}" hidden>
+              <td>${type === 'labor' ? 'Daily Labor Subtotal' : 'Daily Rental Subtotal'}</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td class="num">${formatCostSheetMoney(day.subtotal)}</td>
+            </tr>
+          `);
+        });
+
+        return `
+          <table class="cost-sheet-pivot-table">
+            <colgroup>
+              ${type === 'labor'
+                ? '<col class="cost-col-desc"><col class="cost-col-qty"><col class="cost-col-rate"><col class="cost-col-days"><col class="cost-col-amount">'
+                : '<col class="cost-col-desc"><col class="cost-col-unit"><col class="cost-col-supplier"><col class="cost-col-rate"><col class="cost-col-amount">'}
+            </colgroup>
+            <thead>
+              <tr>
+                ${type === 'labor'
+                  ? '<th>Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Days</th><th class="num">Amount</th>'
+                  : '<th>Description</th><th>Unit</th><th>Supplier</th><th class="num">Rate</th><th class="num">Amount</th>'}
+              </tr>
+            </thead>
+            <tbody>${rows.join('')}</tbody>
+          </table>
+        `;
+      };
+
+      els.costSheetBody.innerHTML = `
+        <div class="cost-sheet-worksheet-head">
+          <table class="cost-sheet-head-table">
+            <colgroup>
+              <col class="cost-head-label"><col class="cost-head-value"><col class="cost-head-label"><col class="cost-head-value"><col class="cost-head-label"><col class="cost-head-value">
+            </colgroup>
+            <tbody>
+              <tr>
+                <th>Sheet</th>
+                <td>Detailed Cost Buildup</td>
+                <th>Project</th>
+                <td class="is-major">${escapeHtml(latestCostSheetContext.project)}</td>
+                <th>Period</th>
+                <td class="is-major">${escapeHtml(model.periodLabel)}</td>
+              </tr>
+              <tr>
+                <th>Range</th>
+                <td>${escapeHtml(model.periodRange)}</td>
+                <th>Charged Days</th>
+                <td class="num">${model.chargedDays}</td>
+                <th>Scope</th>
+                <td>Project Wide</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <section class="cost-sheet-section">
+          <div class="cost-sheet-section-head"><h3>Period Summary</h3><strong>${formatCostSheetMoney(model.totalCost)}</strong></div>
+          <table class="cost-sheet-summary-table">
+            <thead><tr><th>Metric</th><th class="num">Value</th></tr></thead>
+            <tbody>${summaryRows.join('')}</tbody>
+          </table>
+        </section>
+        <section class="cost-sheet-section">
+          <div class="cost-sheet-section-head"><h3>Labor Cost Build-Up</h3><strong>${formatCostSheetMoney(model.laborSubtotal)}</strong></div>
+          ${model.laborDays.length ? renderPivotTable(model.laborDays, 'labor') : '<div class="cost-sheet-empty">No labor cost recorded for this period.</div>'}
+        </section>
+        <section class="cost-sheet-section">
+          <div class="cost-sheet-section-head"><h3>Equipment Rental Build-Up</h3><strong>${formatCostSheetMoney(model.rentalSubtotal)}</strong></div>
+          ${model.equipmentDays.length ? renderPivotTable(model.equipmentDays, 'rental') : '<div class="cost-sheet-empty">No rental cost recorded for this period.</div>'}
+        </section>
+        <section class="cost-sheet-section">
+          <div class="cost-sheet-section-head"><h3>Indirect Cost</h3><strong>${formatCostSheetMoney(model.indirectSubtotal)}</strong></div>
+          <table class="cost-sheet-summary-table">
+            <thead><tr><th>Description</th><th class="num">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Overhead Daily Rate</td><td class="num">${formatCostSheetMoney(latestCostSheetContext.overheadsDaily)}</td></tr>
+              <tr><td>Charged Days</td><td class="num">${model.chargedDays}</td></tr>
+              <tr class="is-total"><td>Indirect Amount</td><td class="num">${formatCostSheetMoney(model.indirectSubtotal)}</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="cost-sheet-section is-summary">
+          <div class="cost-sheet-section-head"><h3>Cost Buildup Summary</h3><strong>${formatCostSheetMoney(model.totalCost)}</strong></div>
+          <table class="cost-sheet-summary-table">
+            <thead><tr><th>Description</th><th class="num">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Labor Subtotal</td><td class="num">${formatCostSheetMoney(model.laborSubtotal)}</td></tr>
+              <tr><td>Rental Subtotal</td><td class="num">${formatCostSheetMoney(model.rentalSubtotal)}</td></tr>
+              <tr><td>Direct Cost</td><td class="num">${formatCostSheetMoney(model.directSubtotal)}</td></tr>
+              <tr><td>Indirect Cost</td><td class="num">${formatCostSheetMoney(model.indirectSubtotal)}</td></tr>
+              <tr><td>Total Executed Lm</td><td class="num">${formatNumberOneDecimal(model.totalExecutedLm)}</td></tr>
+              <tr class="is-total"><td>Final Cost / Lm</td><td class="num">${model.totalExecutedLm > 0 ? `${formatNumberOneDecimal(model.costPerLm)} AED/Lm` : '-'}</td></tr>
+            </tbody>
+          </table>
+        </section>
+      `;
+
+      els.costSheetBody.querySelectorAll('[data-cost-group-toggle]').forEach(btn => {
+        btn.addEventListener('click', evt => {
+          evt.preventDefault();
+          const groupId = btn.dataset.costGroupToggle || '';
+          const children = els.costSheetBody.querySelectorAll(`[data-cost-group-child="${groupId}"]`);
+          const isExpanding = btn.getAttribute('aria-expanded') !== 'true';
+          btn.setAttribute('aria-expanded', isExpanding ? 'true' : 'false');
+          btn.textContent = isExpanding ? '-' : '+';
+          children.forEach(row => {
+            row.hidden = !isExpanding;
+          });
+        });
+      });
+
+      els.costSheetModal.hidden = false;
+      els.costSheetModal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('cost-sheet-open');
+    }
+
     function renderCostPage(project, forceAnimate = false) {
       if (!els.pageCost) return;
       const rows = getRowsForProject(project);
@@ -6259,12 +6968,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const weekHeaders = weeks.map(week => {
           const lastDayLabel = weekLastDayLabelMap.get(week);
           if (lastDayLabel) {
-            return `<th class="num"><div>Week ${week}</div><div style="font-size:10px; color:rgba(244,247,251,0.6); margin-top:2px;">${lastDayLabel}</div></th>`;
+            return `<th class="num"><button type="button" class="cost-period-trigger" data-cost-period="week" data-cost-week="${week}"><div>Week ${week}</div><div style="font-size:10px; color:rgba(244,247,251,0.6); margin-top:2px;">${lastDayLabel}</div></button></th>`;
           }
-          return `<th class="num">Week ${week}</th>`;
+          return `<th class="num"><button type="button" class="cost-period-trigger" data-cost-period="week" data-cost-week="${week}">Week ${week}</button></th>`;
         }).join('');
         const lastDayHeaderText = lastDayDateKey ? `Last day (${formatShortDateLabel(lastDayDateKey)})` : 'Last day';
-        els.costTableHeadRow.innerHTML = `<th class="col-head">CATEGORY / WEEK</th>${weekHeaders}<th class="num total-col">${lastDayHeaderText}</th>`;
+        els.costTableHeadRow.innerHTML = `<th class="col-head">CATEGORY / WEEK</th>${weekHeaders}<th class="num total-col"><button type="button" class="cost-period-trigger total-col" data-cost-period="lastday">${lastDayHeaderText}</button></th>`;
       }
 
       const dailyRates = {
@@ -6280,12 +6989,12 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       };
 
       const overheadsDaily = 2540; // Updated overheads rate
-      const rigRental = 2500; // Updated rig rate
-      const vbRental = 3250; // Updated vibro+powerpack rate
-      const craneRental = 1100;
+      const rigRental = 2500; // Titania/static fallback rate
+      const vbRental = 3250; // Titania/static fallback rate
+      const craneRental = 1100; // Titania/static fallback rate
       const projectKey = normalizeText(project).toLowerCase();
       const normalizedSelectedPlot = normalizeText(selectedPlot);
-      const getDailyReportEquipmentCountsForDate = (dateKey = '') => {
+      const getDailyReportEquipmentSnapshotForDate = (dateKey = '') => {
         const normalizedDate = normalizeDateString(dateKey);
         if (!normalizedDate) return null;
         const targetProjectToken = getCompanyProjectToken(project);
@@ -6304,23 +7013,47 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const rigSet = new Set();
         const craneSet = new Set();
         const vbSet = new Set();
+        let rigRateTotal = 0;
+        let craneRateTotal = 0;
+        let vbRateTotal = 0;
 
         matches.forEach(item => {
           const typeKey = normalizeText(item.type).toLowerCase();
           const labelKey = normalizeText(item.label) || `${typeKey}-${item.date}`;
           if (typeKey === 'rig') {
-            rigSet.add(labelKey);
+            if (!rigSet.has(labelKey)) {
+              rigSet.add(labelKey);
+              rigRateTotal += Number(item.rentalRate) || 0;
+            }
           } else if (typeKey === 'crane') {
-            craneSet.add(labelKey);
+            if (!craneSet.has(labelKey)) {
+              craneSet.add(labelKey);
+              craneRateTotal += Number(item.rentalRate) || 0;
+            }
           } else if (typeKey === 'vibrator') {
-            vbSet.add(labelKey);
+            if (!vbSet.has(labelKey)) {
+              vbSet.add(labelKey);
+              vbRateTotal += Number(item.rentalRate) || 0;
+            }
           }
         });
 
         return {
           rig: rigSet.size,
           vb: vbSet.size,
-          crane: craneSet.size
+          crane: craneSet.size,
+          rigRateTotal,
+          vbRateTotal,
+          craneRateTotal
+        };
+      };
+      const getDailyReportEquipmentCountsForDate = (dateKey = '') => {
+        const snapshot = getDailyReportEquipmentSnapshotForDate(dateKey);
+        if (!snapshot) return null;
+        return {
+          rig: snapshot.rig,
+          vb: snapshot.vb,
+          crane: snapshot.crane
         };
       };
       const getEquipmentCountsForDate = (dateKey = '') => {
@@ -6343,6 +7076,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         return { rig: 0, vb: 0, crane: 0 };
       };
       const equipmentCounts = getEquipmentCountsForDate(lastDayDateKey);
+      const dailyReportLastDaySnapshot = getDailyReportEquipmentSnapshotForDate(lastDayDateKey);
 
       const lastDayValues = {
         pm: lastDayCounts.pm * dailyRates.pm,
@@ -6354,9 +7088,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         we: lastDayCounts.we * dailyRates.we,
         me: lastDayCounts.me * dailyRates.me,
         hl: lastDayCounts.hl * dailyRates.hl,
-        r_rig: lastDayDateKey ? equipmentCounts.rig * rigRental : 0,
-        r_vb: lastDayDateKey ? equipmentCounts.vb * vbRental : 0,
-        r_crane: lastDayDateKey ? equipmentCounts.crane * craneRental : 0
+        r_rig: lastDayDateKey ? (dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.rigRateTotal : equipmentCounts.rig * rigRental) : 0,
+        r_vb: lastDayDateKey ? (dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.vbRateTotal : equipmentCounts.vb * vbRental) : 0,
+        r_crane: lastDayDateKey ? (dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.craneRateTotal : equipmentCounts.crane * craneRental) : 0
       };
       lastDayValues.salaries = lastDayValues.pm + lastDayValues.se + lastDayValues.foreman + lastDayValues.op + lastDayValues.vb + lastDayValues.rig + lastDayValues.we + lastDayValues.me + lastDayValues.hl;
       lastDayValues.rental = lastDayValues.r_rig + lastDayValues.r_vb + lastDayValues.r_crane;
@@ -6428,6 +7162,13 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
         const calcEquipmentRental = (equipmentKey, rate) => {
           return d.dailyRows.reduce((sum, dayRow) => {
+            const dailySnapshot = getDailyReportEquipmentSnapshotForDate(dayRow?.date);
+            if (dailySnapshot) {
+              const rateKey = equipmentKey === 'rig'
+                ? 'rigRateTotal'
+                : (equipmentKey === 'vb' ? 'vbRateTotal' : 'craneRateTotal');
+              return sum + (Number(dailySnapshot[rateKey]) || 0);
+            }
             const count = Number(getEquipmentCountsForDate(dayRow?.date)?.[equipmentKey]) || 0;
             return sum + (count * rate);
           }, 0);
@@ -6474,6 +7215,36 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const cplm = cumLm > 0 ? cumTotal / cumLm : 0;
 
         return { w, days, salaries, pm, se, foreman, op, vb, rig, we, me, hl, rental, r_rig, r_vb, r_crane, direct, overheads, total, lm, cumLm, cumTotal, cplm };
+      });
+      const allProjectDates = [
+        ...getProjectWideManpowerRows(project).map(row => normalizeDateString(row?.date)).filter(Boolean),
+        ...getProjectWideDailyEquipmentRows(project).map(row => normalizeDateString(row?.date)).filter(Boolean),
+        ...getProjectWidePileRows(project).map(row => getOverviewDateKey(row)).filter(Boolean),
+        ...getProjectWideSecantPileRows(project).map(row => getSecantExecutionDateKey(row)).filter(Boolean)
+      ].sort();
+      const yearHint = allProjectDates.length ? Number(String(allProjectDates[allProjectDates.length - 1]).slice(0, 4)) : new Date().getFullYear();
+      latestCostSheetContext = {
+        project,
+        yearHint,
+        lastDayDateKey,
+        overheadsDaily,
+        dailyRates,
+        rigRental,
+        vbRental,
+        craneRental,
+        weekDataMap: new Map(weeklyData.map(item => [item.w, item])),
+        weeklySourceData: data,
+        projectWidePileRows: getProjectWidePileRows(project),
+        projectWideSecantRows: getProjectWideSecantPileRows(project),
+        projectWideManpowerRows: getProjectWideManpowerRows(project),
+        projectWideEquipmentRows: getProjectWideDailyEquipmentRows(project)
+      };
+      els.costTableHeadRow?.querySelectorAll('.cost-period-trigger').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const period = btn.dataset.costPeriod || 'week';
+          const week = btn.dataset.costWeek || '';
+          openCostSheetModal(period, week);
+        });
       });
       const getEquipmentWeekMeta = (weekNumber, equipmentKey, fallbackDays = 0) => {
         const bucket = data[weekNumber];
@@ -9985,6 +10756,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const bottomArea = { y1: dividerY + 30, y2: chartH - bottom };
       const topHeight = topArea.y2 - topArea.y1;
       const bottomHeight = bottomArea.y2 - bottomArea.y1;
+      const latestDateKey = dates[dates.length - 1] || null;
       const utilMax = Math.max(100, ...series.flatMap(item => item.points.map(point => utilizationMode === 'daily' ? point.utilization : point.cumulativeUtilization).filter(Number.isFinite)));
       const lmMax = Math.max(1, ...series.flatMap(item => item.points.map(point => utilizationMode === 'daily' ? point.drilledLm : point.cumulativeLm).filter(Number.isFinite)));
       const yForUtil = value => topArea.y1 + topHeight - (Math.max(0, value) / utilMax) * topHeight;
@@ -10104,6 +10876,21 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const showDateLabelEvery = dates.length > 28 ? 3 : dates.length > 16 ? 2 : 1;
       dates.forEach((dateKey, idx) => {
         const x = dates.length === 1 ? left + innerW / 2 : left + plotSidePad + stepX * idx;
+        const isLatestDay = latestDateKey && dateKey === latestDateKey;
+
+        if (isLatestDay) {
+          const latestBandWidth = Math.max(stepX, 48);
+          const latestBand = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          latestBand.setAttribute('x', String(x - latestBandWidth / 2));
+          latestBand.setAttribute('y', String(topArea.y1));
+          latestBand.setAttribute('width', String(latestBandWidth));
+          latestBand.setAttribute('height', String(bottomArea.y2 - topArea.y1));
+          latestBand.setAttribute('rx', '12');
+          latestBand.setAttribute('fill', 'rgba(142,240,191,0.06)');
+          latestBand.setAttribute('stroke', 'rgba(142,240,191,0.14)');
+          latestBand.setAttribute('stroke-width', '1');
+          svg.appendChild(latestBand);
+        }
 
         if (utilizationMode === 'daily' && idx < dates.length - 1) {
           const separatorX = x + stepX / 2;
@@ -10342,6 +11129,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         if (!rows.length) {
           els.utilizationTableBody.innerHTML = '<tr><td colspan="7" class="utilization-empty">No utilization data available for current scope.</td></tr>';
         } else {
+          const latestGroupDate = dayGroups.length ? dayGroups[0].date : null;
           els.utilizationTableBody.innerHTML = dayGroups.map(group => group.items.map((row, idx) => {
             const utilClass = row.utilization >= 75 ? 'utilization-high' : (row.utilization >= 45 ? 'utilization-mid' : 'utilization-low');
             const totalClass = group.totalUtilization >= 75 ? 'utilization-high' : (group.totalUtilization >= 45 ? 'utilization-mid' : 'utilization-low');
@@ -10349,9 +11137,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             const rowPositionClass = idx === 0
               ? 'utilization-row-first'
               : (idx === group.items.length - 1 ? 'utilization-row-last' : 'utilization-row-mid');
+            const latestGroupClass = latestGroupDate && group.date === latestGroupDate ? 'utilization-group-latest' : '';
             return `
-              <tr class="${idx === 0 ? 'utilization-group-start' : ''} ${rowPositionClass}">
-                ${idx === 0 ? `<td rowspan="${group.items.length}" class="utilization-date-cell"><div class="utilization-date-block"><span class="utilization-date-label">Day</span><strong>${formatDateFullLabel(group.date)}</strong><span class="utilization-date-meta">${group.items.length} rig${group.items.length === 1 ? '' : 's'}</span></div></td>` : ''}
+              <tr class="${idx === 0 ? 'utilization-group-start' : ''} ${rowPositionClass} ${latestGroupClass}">
+                ${idx === 0 ? `<td rowspan="${group.items.length}" class="utilization-date-cell ${latestGroupClass}"><div class="utilization-date-block"><span class="utilization-date-label">Day</span><strong>${formatDateFullLabel(group.date)}</strong><span class="utilization-date-meta">${group.items.length} rig${group.items.length === 1 ? '' : 's'}</span></div></td>` : ''}
                 <td>
                   <span class="utilization-rig-chip">
                     <span class="utilization-rig-dot" style="background:${rigColor};"></span>
@@ -10362,7 +11151,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
                 <td class="num">${row.drilledLm.toFixed(1)}</td>
                 <td class="num">${row.shiftHours.toFixed(1)}</td>
                 <td class="num ${utilClass}">${row.utilization.toFixed(1)}%</td>
-                ${idx === 0 ? `<td rowspan="${group.items.length}" class="num ${totalClass} utilization-total-cell"><div class="utilization-total-block"><span class="utilization-total-label">Day Total</span><strong>${group.totalUtilization.toFixed(1)}%</strong></div></td>` : ''}
+                ${idx === 0 ? `<td rowspan="${group.items.length}" class="num ${totalClass} utilization-total-cell ${latestGroupClass}"><div class="utilization-total-block"><span class="utilization-total-label">Day Total</span><strong>${group.totalUtilization.toFixed(1)}%</strong></div></td>` : ''}
               </tr>
             `;
           }).join('')).join('');
@@ -10738,6 +11527,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           if (evt.target === els.companyExportPanel) toggleCompanyExportPanel(false);
         });
 
+        els.costSheetCloseBtn?.addEventListener('click', closeCostSheetModal);
+        els.costSheetBackdrop?.addEventListener('click', closeCostSheetModal);
+
         els.companyExportConfirmBtn?.addEventListener('click', () => {
           exportCompanyManpowerWorkbook(els.companyExportProjectSelect?.value || 'all');
           toggleCompanyExportPanel(false);
@@ -10791,6 +11583,9 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         });
 
         document.addEventListener('pointerdown', hideChartTooltipsOnOutsideInteraction);
+        document.addEventListener('keydown', evt => {
+          if (evt.key === 'Escape') closeCostSheetModal();
+        });
         document.addEventListener('scroll', hideTooltip, true);
         window.addEventListener('resize', () => {
           if (!currentUser) return;
@@ -10891,6 +11686,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     });
   }
 })();
+
 
 
 
