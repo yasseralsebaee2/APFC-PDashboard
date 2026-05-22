@@ -1,4 +1,4 @@
-:root {
+﻿:root {
       --bg: #06080b;
       --bg-2: #0b0f14;
       --panel: rgba(255,255,255,0.05);
@@ -67,136 +67,103 @@ body.app-loading .auth-shell {
   justify-content: center;
   padding: 24px;
   z-index: 1400;
-  background:
-    radial-gradient(circle at 20% 18%, rgba(142,240,191,0.14), transparent 24%),
-    radial-gradient(circle at 82% 14%, rgba(255,255,255,0.08), transparent 18%),
-    rgba(5, 7, 10, 0.82);
-  backdrop-filter: blur(20px);
+  background: linear-gradient(135deg, #04070b 0%, #0a1118 46%, #071018 100%);
 }
 
 body.app-loading .loading-shell {
   display: flex;
 }
 
-.loading-card {
+.loading-scene {
   position: relative;
-  width: min(480px, 100%);
-  padding: 28px;
-  border-radius: 24px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: linear-gradient(180deg, rgba(17,22,28,0.96), rgba(9,12,16,0.92));
-  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
-}
-
-.loading-brand-row {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 18px;
-}
-
-.loading-brand {
-  display: block;
-  object-fit: contain;
-  filter:
-    drop-shadow(0 0 14px rgba(255,255,255,0.12))
-    drop-shadow(0 0 30px rgba(142,240,191,0.18));
-}
-
-.loading-brand-apfc {
-  width: 64px;
-  height: 64px;
-}
-
-.loading-brand-binghatti {
-  width: 172px;
-  height: 44px;
-}
-
-.loading-eyebrow {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(142,240,191,0.88);
-}
-
-.loading-title {
-  margin: 10px 0 8px;
-  font-size: clamp(24px, 3.3vw, 30px);
-  line-height: 1.05;
-  font-weight: 800;
-}
-
-.loading-copy {
-  min-height: 22px;
-  margin: 0 0 18px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: rgba(244,247,251,0.72);
-}
-
-.loading-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.loading-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #8ef0bf, #6ee7b7);
-  box-shadow: 0 0 0 6px rgba(142,240,191,0.08);
-  animation: loadingPulse 1.4s ease-in-out infinite;
-}
-
-.loading-dot:nth-child(2) {
-  animation-delay: 0.18s;
-}
-
-.loading-dot:nth-child(3) {
-  animation-delay: 0.36s;
-}
-
-.loading-skeleton-grid {
+  width: min(900px, calc(100vw - 48px));
+  min-height: min(420px, calc(100vh - 96px));
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  place-items: center;
+  overflow: visible;
 }
 
-.loading-skeleton {
-  height: 52px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.06);
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.04) 100%);
-  background-size: 220% 100%;
-  animation: loadingShimmer 1.6s linear infinite;
+.loading-glow {
+  display: none !important;
 }
 
-.loading-skeleton-wide {
-  grid-column: span 2;
+.loading-logo-wrap {
+  position: relative;
+  width: min(760px, 82vw);
+  max-width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  isolation: isolate;
 }
 
-@keyframes loadingPulse {
+.loading-logo-wrap::before {
+  content: "";
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: clamp(360px, 54vw, 760px);
+  aspect-ratio: 726 / 182;
+  background: url("../assets/binghatti_logo.svg") center / contain no-repeat;
+  pointer-events: none;
+  filter: brightness(0) invert(1);
+  opacity: 0.1;
+  animation: loadingLogoBaseBreath 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.loading-logo-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: clamp(360px, 54vw, 760px);
+  aspect-ratio: 726 / 182;
+  margin: auto;
+  background: url("../assets/binghatti_logo.svg") center / contain no-repeat;
+  pointer-events: none;
+  filter: brightness(0) invert(1);
+  opacity: 0.78;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 16%, rgba(0,0,0,1) 36%, rgba(0,0,0,1) 54%, rgba(0,0,0,0.08) 74%, rgba(0,0,0,0) 100%);
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.08) 16%, rgba(0,0,0,1) 36%, rgba(0,0,0,1) 54%, rgba(0,0,0,0.08) 74%, rgba(0,0,0,0) 100%);
+  -webkit-mask-size: 170% 100%;
+  mask-size: 170% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: loadingLogoFadeSweep 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.loading-logo-wrap {
+  animation: loadingLogoScalePulse 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.loading-binghatti-lockup,
+.loading-logo-beam,
+.loading-logo-aura,
+.loading-binghatti-svgimg {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@keyframes loadingGlowPulse {
   0%, 100% {
-    transform: scale(0.9);
-    opacity: 0.65;
+    transform: scale(0.96);
+    opacity: 0.55;
   }
   50% {
-    transform: scale(1.05);
-    opacity: 1;
-  }
-}
-
-@keyframes loadingShimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
+    transform: scale(1.02);
+    opacity: 0.9;
   }
 }
 
@@ -2425,9 +2392,10 @@ body.auth-locked .auth-shell {
 /* ========================================================================= */
 .cost-layout {
   display: grid;
-  grid-template-columns: 10fr 5fr;
-  gap: 24px;
-  height: 100%;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  height: auto;
+  min-height: 0;
 }
 @media (max-width: 1024px) {
   .cost-layout { grid-template-columns: 1fr; }
@@ -3273,29 +3241,31 @@ body.auth-locked .auth-shell {
 .cost-report-panel, .cost-charts-panel {
   display: flex;
   flex-direction: column;
-  background: rgba(39, 44, 48, 0.5);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 20px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(27,31,35,0.88), rgba(21,24,28,0.9));
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 18px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   overflow: hidden;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.24);
 }
 
 .cost-table-wrap {
   flex: 1;
   overflow: auto;
-  padding: 0 14px 12px 14px;
+  padding: 0 16px 16px 16px;
 }
 
 .financial-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11.5px;
   color: #fff;
+  table-layout: auto;
 }
 .financial-table th, .financial-table td {
-  padding: 8px 9px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   text-align: right;
   white-space: nowrap;
   line-height: 1.2;
@@ -3305,19 +3275,40 @@ body.auth-locked .auth-shell {
   font-weight: 500;
 }
 .financial-table th {
-  font-weight: 700;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
+  font-weight: 800;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.76);
   text-transform: uppercase;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255,255,255,0.02);
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
   position: sticky;
   top: 0;
+  z-index: 3;
+}
+.financial-table th:not(:last-child),
+.financial-table td:not(:last-child) {
+  border-right: 1px solid rgba(255,255,255,0.045);
+}
+.financial-table th.col-head {
+  min-width: 220px;
+}
+.financial-table td.col-head,
+.financial-table th.col-head {
+  position: sticky;
+  left: 0;
   z-index: 2;
+  background: linear-gradient(180deg, rgba(28,32,37,0.98), rgba(25,29,33,0.98));
+}
+.financial-table thead th.col-head {
+  z-index: 4;
+}
+.financial-table tbody tr:hover td.col-head {
+  background: linear-gradient(180deg, rgba(34,39,45,0.98), rgba(31,35,40,0.98));
 }
 .financial-table th.total-col, .financial-table td.total-col {
-  background: rgba(255, 255, 255, 0.04);
-  font-weight: 700;
+  background: rgba(255, 255, 255, 0.055);
+  font-weight: 800;
 }
 .financial-table tbody td.num:not(.total-col) {
   opacity: 0.78;
@@ -3329,7 +3320,7 @@ body.auth-locked .auth-shell {
   background: rgba(255, 255, 255, 0.04);
 }
 .financial-table tr.section-row td {
-  padding: 18px 9px 8px 9px;
+  padding: 20px 10px 10px 10px;
   border-bottom: none;
   background: transparent;
 }
@@ -3342,8 +3333,8 @@ body.auth-locked .auth-shell {
 .section-row-inner {
   display: flex;
   align-items: center;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.16);
 }
 .financial-table tr.empty-section-row .section-row-inner {
   min-height: 0;
@@ -3352,10 +3343,10 @@ body.auth-locked .auth-shell {
 }
 .section-row-label {
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 900;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.72);
+  color: rgba(255,255,255,0.7);
 }
 .financial-table tr.row-unitRateSection .section-row-label {
   color: #dccb95;
@@ -3363,8 +3354,8 @@ body.auth-locked .auth-shell {
 .financial-table tr.group-head td {
   font-weight: 800;
   color: #fff;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255,255,255,0.04);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255,255,255,0.05);
 }
 .financial-table tr.row-direct td.col-head,
 .financial-table tr.row-overheads td.col-head {
@@ -3394,7 +3385,7 @@ body.auth-locked .auth-shell {
   color: rgba(255,255,255,0.72);
 }
 .financial-table tr.group-sub td {
-  padding-left: 20px;
+  padding-left: 22px;
   color: rgba(255, 255, 255, 0.75);
 }
 .financial-table tr.group-sub td.col-head {
@@ -3404,9 +3395,9 @@ body.auth-locked .auth-shell {
   font-weight: 800;
   font-size: 12.5px;
   color: #fff;
-  border-top: 2px solid rgba(255, 255, 255, 0.24);
-  border-bottom: 2px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.08);
+  border-top: 2px solid rgba(255, 255, 255, 0.28);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.05));
 }
 .financial-table tr.total-row.row-total td.col-head {
   background: rgba(255, 255, 255, 0.08) !important;
@@ -3419,30 +3410,31 @@ body.auth-locked .auth-shell {
 
 .cost-charts-body {
   padding: 16px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
   flex: 1;
 }
 .cost-chart-card {
-  flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .cost-chart-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255,255,255,0.8);
-  margin-bottom: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.72);
+  margin-bottom: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
 }
 .cost-chart-wrap {
   flex: 1;
   position: relative;
-  min-height: 180px;
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 12px;
+  min-height: 260px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 14px;
 }
 .cost-chart-svg {
   width: 100%;
@@ -3456,15 +3448,46 @@ body.auth-locked .auth-shell {
   color: inherit;
   font: inherit;
   font-weight: 800;
-  text-transform: inherit;
-  letter-spacing: inherit;
   cursor: pointer;
   padding: 0;
   width: 100%;
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  text-align: center;
 }
 
 .cost-period-trigger:hover {
   color: rgba(255,255,255,0.96);
+}
+.cost-period-trigger-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cost-period-trigger-main::after {
+  content: "↗";
+  font-size: 11px;
+  color: rgba(142,240,191,0.78);
+  transform: translateY(-1px);
+}
+.cost-period-trigger-sub {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(244,247,251,0.52);
+}
+.cost-period-trigger.is-live .cost-period-trigger-sub {
+  color: rgba(142,240,191,0.82);
+}
+
+#pageCost,
+#pageCost.page-view,
+#pageCost.page-view.active {
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .cost-sheet-modal {
@@ -5736,7 +5759,7 @@ body.cost-sheet-open {
 }
 
 /* ==========================================================================
-   MOBILE PHONES — 375–430 px portrait + landscape  V2
+   MOBILE PHONES â€” 375â€“430 px portrait + landscape  V2
    RULE: only NEW selectors / NEW breakpoints. Nothing above this line
    is modified. Desktop & tablet layouts are fully preserved.
    ========================================================================== */
@@ -5746,7 +5769,7 @@ body.cost-sheet-open {
 .timeline-filter-toggle { display: none; }
 
 /* --------------------------------------------------------------------------
-   Portrait phones  ≤ 767 px
+   Portrait phones  â‰¤ 767 px
    -------------------------------------------------------------------------- */
 @media (max-width: 767px) {
 
@@ -5760,7 +5783,7 @@ body.cost-sheet-open {
     grid-template-rows: auto auto;
   }
 
-  /* -- Sidebar → fixed bottom tab bar ------------------------------------- */
+  /* -- Sidebar â†’ fixed bottom tab bar ------------------------------------- */
   .sidebar {
     position: fixed;
     bottom: 0;
@@ -5782,7 +5805,7 @@ body.cost-sheet-open {
   }
   .sidebar::after { display: none; }
 
-  /* Hide logo in the tab bar — Binghatti logo is in topbar */
+  /* Hide logo in the tab bar â€” Binghatti logo is in topbar */
   .brand-apfc { display: none; }
 
   .nav-group {
@@ -5813,7 +5836,7 @@ body.cost-sheet-open {
     box-shadow: none;
   }
 
-  /* Remove bottom underline pill — tab bar uses top border instead */
+  /* Remove bottom underline pill â€” tab bar uses top border instead */
   .nav-btn::before     { display: none; }
   .nav-btn.active::after { display: none; }
 
@@ -5989,7 +6012,7 @@ body.cost-sheet-open {
     gap: 10px;
   }
 
-  /* -- KPI row: 2 × 3 ----------------------------------------------------- */
+  /* -- KPI row: 2 Ã— 3 ----------------------------------------------------- */
   .kpi-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
@@ -6110,7 +6133,7 @@ body.cost-sheet-open {
     border-color: rgba(142,240,191,0.28);
   }
   .timeline-filter-toggle::after {
-    content: '▼';
+    content: 'â–¼';
     font-size: 10px;
     opacity: 0.55;
     transition: transform 0.25s ease;
@@ -6174,8 +6197,8 @@ body.cost-sheet-open {
 }
 
 /* --------------------------------------------------------------------------
-   Landscape phones  e.g. iPhone 14 rotated: 844 × 390 px
-   Targets short viewports (height ≤ 480) at phone-width widths
+   Landscape phones  e.g. iPhone 14 rotated: 844 Ã— 390 px
+   Targets short viewports (height â‰¤ 480) at phone-width widths
    -------------------------------------------------------------------------- */
 @media (max-width: 900px) and (max-height: 480px) and (orientation: landscape) {
 
@@ -6189,7 +6212,7 @@ body.cost-sheet-open {
     grid-template-rows: auto auto;
   }
 
-  /* Sidebar → fixed bottom tab bar (landscape) */
+  /* Sidebar â†’ fixed bottom tab bar (landscape) */
   .sidebar {
     position: fixed;
     bottom: 0;
@@ -6384,7 +6407,7 @@ body.cost-sheet-open {
   .prod-card { min-height: 180px; height: auto; border-radius: 14px; }
   .prod-chart-wrap { min-height: 120px; height: 120px; }
 
-  /* Manpower — allow horizontal scroll so all column headers are readable */
+  /* Manpower â€” allow horizontal scroll so all column headers are readable */
   #pageManpower {
     overflow-x: auto;
     overflow-y: visible;
@@ -6470,7 +6493,7 @@ body.cost-sheet-open {
     letter-spacing: 0.02em;
   }
   .timeline-filter-toggle::after {
-    content: '▼';
+    content: 'â–¼';
     font-size: 10px;
     opacity: 0.55;
     transition: transform 0.25s ease;
@@ -6923,7 +6946,7 @@ body.cost-sheet-open {
   height: 72vh;
 }
 
-/* ── Executive: fixed-height one-page panel ── */
+/* â”€â”€ Executive: fixed-height one-page panel â”€â”€ */
 .executive-panel {
   height: calc(100vh - 178px);
   min-height: 560px;
@@ -6952,7 +6975,7 @@ body.cost-sheet-open {
   padding: 14px;
 }
 
-/* ── Overview: side-by-side grid ── */
+/* â”€â”€ Overview: side-by-side grid â”€â”€ */
 .executive-overview-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -6976,7 +6999,7 @@ body.cost-sheet-open {
   min-width: 820px;
 }
 
-/* ── Activity rows (no cards — clean inline rows) ── */
+/* â”€â”€ Activity rows (no cards â€” clean inline rows) â”€â”€ */
 .exec-act-stack {
   display: flex;
   flex-direction: column;
@@ -7025,7 +7048,7 @@ body.cost-sheet-open {
   color: rgba(125, 198, 255, 0.92);
 }
 
-/* ── Progress column ── */
+/* â”€â”€ Progress column â”€â”€ */
 .exec-progress-line {
   display: flex;
   align-items: baseline;
@@ -7085,7 +7108,7 @@ body.cost-sheet-open {
 .exec-progress-fill--piles { background: linear-gradient(90deg, #6ee7b7, #34d399); }
 .exec-progress-fill--king  { background: linear-gradient(90deg, #60a5fa, #3b82f6); }
 
-/* ── Yesterday / AVG key-value ── */
+/* â”€â”€ Yesterday / AVG key-value â”€â”€ */
 .exec-kv {
   display: flex;
   align-items: baseline;
@@ -7114,7 +7137,7 @@ body.cost-sheet-open {
   margin: 0 1px;
 }
 
-/* ── ETA column ── */
+/* â”€â”€ ETA column â”€â”€ */
 .exec-eta-date {
   font-size: 12px;
   font-weight: 800;
@@ -7129,7 +7152,7 @@ body.cost-sheet-open {
   margin-top: 4px;
 }
 
-/* ── Scalar cells ── */
+/* â”€â”€ Scalar cells â”€â”€ */
 .exec-scalar {
   font-size: 15px;
   font-weight: 900;
@@ -7151,7 +7174,7 @@ body.cost-sheet-open {
   vertical-align: middle;
 }
 
-/* ── Trend chart project selector ── */
+/* â”€â”€ Trend chart project selector â”€â”€ */
 .exec-trend-selector-row {
   display: flex;
   justify-content: space-between;
@@ -7171,7 +7194,7 @@ body.cost-sheet-open {
   min-width: 180px;
 }
 
-/* ── Chart shell + card fill height ── */
+/* â”€â”€ Chart shell + card fill height â”€â”€ */
 .executive-chart-shell {
   display: flex;
   flex-direction: column;
@@ -7200,7 +7223,7 @@ body.cost-sheet-open {
   overflow: visible;
 }
 
-/* ── Resources view: fill height, internal scroll ── */
+/* â”€â”€ Resources view: fill height, internal scroll â”€â”€ */
 .executive-resources-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -7224,7 +7247,7 @@ body.cost-sheet-open {
   min-height: 0;
 }
 
-/* ── Map view: fill height ── */
+/* â”€â”€ Map view: fill height â”€â”€ */
 .executive-map-toolbar {
   flex-shrink: 0;
   padding: 0 0 10px;
@@ -7261,4 +7284,507 @@ body.cost-sheet-open {
 }
 
 
+
+
+@keyframes loadingLogoFadeSweep {
+  0%, 100% {
+    -webkit-mask-position: 112% 0;
+    mask-position: 112% 0;
+    opacity: 0.14;
+  }
+  18% {
+    opacity: 0.32;
+  }
+  50% {
+    -webkit-mask-position: 22% 0;
+    mask-position: 22% 0;
+    opacity: 1;
+  }
+  82% {
+    opacity: 0.32;
+  }
+}
+
+/* ==========================================================================
+   COST WORKBOOK FINAL OVERRIDES
+   ========================================================================== */
+#pageCost,
+#pageCost.page-view,
+#pageCost.page-view.active {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#pageCost .cost-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: max-content;
+  height: auto;
+}
+
+#pageCost .cost-report-panel,
+#pageCost .cost-charts-panel {
+  background:
+    linear-gradient(180deg, rgba(28,32,37,0.96), rgba(21,24,28,0.96));
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 22px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+}
+
+#pageCost .cost-report-panel {
+  flex: 0 0 auto;
+}
+
+#pageCost .cost-charts-panel {
+  flex: 0 0 auto;
+}
+
+#pageCost .panel-header {
+  padding: 18px 20px 14px;
+  margin-bottom: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+#pageCost .panel-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+#pageCost .panel-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(244,247,251,0.56);
+}
+
+#pageCost .panel-tag {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(142,240,191,0.12);
+  border: 1px solid rgba(142,240,191,0.24);
+  color: #9af2c4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#pageCost .cost-table-wrap {
+  flex: 0 0 auto;
+  height: auto;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0 18px 18px;
+}
+
+#pageCost .financial-table {
+  width: 100%;
+  min-width: 1280px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.25px;
+  color: rgba(244,247,251,0.92);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+#pageCost .financial-table th,
+#pageCost .financial-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid rgba(255,255,255,0.04);
+  text-align: right;
+  white-space: nowrap;
+  line-height: 1.15;
+  background: transparent;
+}
+
+#pageCost .financial-table th:first-child,
+#pageCost .financial-table td:first-child {
+  border-left: 1px solid rgba(255,255,255,0.04);
+}
+
+#pageCost .financial-table thead th {
+  padding: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.028));
+  border-top: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.14);
+  vertical-align: stretch;
+}
+
+#pageCost .financial-table th.col-head,
+#pageCost .financial-table td.col-head {
+  min-width: 236px;
+  text-align: left;
+}
+
+#pageCost .financial-table th.col-head {
+  padding: 12px 14px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244,247,251,0.76);
+}
+
+#pageCost .financial-table td.col-head {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: linear-gradient(180deg, rgba(29,33,38,1), rgba(25,29,33,1));
+  background-clip: padding-box;
+  box-shadow: 14px 0 18px rgba(0,0,0,0.34);
+}
+
+#pageCost .financial-table thead th.col-head {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  background: linear-gradient(180deg, rgba(37,42,48,1), rgba(30,34,39,1));
+  box-shadow: 14px 0 18px rgba(0,0,0,0.34);
+}
+
+#pageCost .financial-table thead th.num {
+  min-width: 136px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+
+#pageCost .financial-table thead th.total-col {
+  min-width: 148px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.04));
+}
+
+#pageCost .financial-table tbody tr:hover td {
+  background: rgba(255,255,255,0.03);
+}
+
+#pageCost .financial-table tbody tr:hover td.col-head {
+  background: linear-gradient(180deg, rgba(35,40,46,0.98), rgba(31,35,40,0.98));
+}
+
+#pageCost .financial-table tbody td.num:not(.total-col) {
+  opacity: 0.84;
+}
+
+#pageCost .financial-table td.num {
+  letter-spacing: 0.01em;
+}
+
+#pageCost .financial-table tr.section-row td {
+  padding: 16px 0 8px;
+  border: 0;
+  background: transparent !important;
+}
+
+#pageCost .financial-table tr.empty-section-row td {
+  padding: 10px 0 2px;
+  border: 0;
+  background: transparent !important;
+}
+
+#pageCost .section-row-inner {
+  min-height: 0;
+  padding-top: 0;
+  border-top: 1px solid rgba(255,255,255,0.14);
+}
+
+#pageCost .section-row-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244,247,251,0.62);
+}
+
+#pageCost .financial-table tr.group-head td {
+  font-weight: 800;
+  color: #f7f9fc;
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.03));
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+
+#pageCost .financial-table tr.group-head td.col-head {
+  color: rgba(244,247,251,0.96);
+}
+
+#pageCost .financial-table tr.group-sub td {
+  padding-left: 22px;
+  color: rgba(244,247,251,0.74);
+}
+
+#pageCost .financial-table tr.row-salaries td.num,
+#pageCost .financial-table tr.row-salaries td.col-head,
+#pageCost .financial-table tr.row-salaries .cost-pivot-toggle {
+  color: #6db8ea;
+}
+
+#pageCost .financial-table tr.row-rental td.num,
+#pageCost .financial-table tr.row-rental td.col-head,
+#pageCost .financial-table tr.row-rental .cost-pivot-toggle {
+  color: #c9e868;
+}
+
+#pageCost .financial-table tr.row-overheads td.num,
+#pageCost .financial-table tr.row-overheads td.col-head {
+  color: #55dd8f;
+}
+
+#pageCost .financial-table tr.row-lm td.num,
+#pageCost .financial-table tr.row-cumLm td.num {
+  color: rgba(198, 230, 255, 0.88);
+}
+
+#pageCost .financial-table tr.total-row td {
+  font-weight: 900;
+  font-size: 12.25px;
+  color: #f4e8ca;
+  background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.045));
+  border-top: 1px solid rgba(255,255,255,0.16);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+#pageCost .financial-table tr.spacer-row td {
+  height: 10px;
+  border: 0;
+  padding: 0;
+  background: transparent !important;
+}
+
+#pageCost .financial-table th.is-col-hover,
+#pageCost .financial-table td.is-col-hover {
+  background: linear-gradient(180deg, rgba(142,240,191,0.08), rgba(142,240,191,0.04)) !important;
+}
+
+#pageCost .financial-table td.cost-col-lastday {
+  font-weight: 800;
+}
+
+#pageCost .financial-table th.lastday-col,
+#pageCost .financial-table td.cost-col-lastday {
+  background-color: rgba(255,255,255,0.025);
+}
+
+#pageCost .financial-table th.is-live-col,
+#pageCost .financial-table td.is-live-col {
+  background: linear-gradient(180deg, rgba(142,240,191,0.045), rgba(142,240,191,0.018)) !important;
+}
+
+#pageCost .financial-table tbody td.col-head {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: linear-gradient(180deg, rgba(29,33,38,1), rgba(25,29,33,1)) !important;
+  background-clip: padding-box;
+  box-shadow: 14px 0 18px rgba(0,0,0,0.34);
+}
+
+#pageCost .financial-table tbody tr:hover td.col-head {
+  background: linear-gradient(180deg, rgba(35,40,46,1), rgba(31,35,40,1)) !important;
+}
+
+#pageCost .cost-period-trigger {
+  width: 100%;
+  min-height: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px 9px;
+  border: 0;
+  background: transparent;
+  color: rgba(244,247,251,0.84);
+  text-align: center;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+#pageCost .cost-period-trigger:hover {
+  background: rgba(142,240,191,0.06);
+  color: #ffffff;
+  box-shadow: inset 0 -2px 0 rgba(142,240,191,0.42);
+}
+
+#pageCost .cost-period-trigger.total-col:hover {
+  background: rgba(255,255,255,0.07);
+  box-shadow: inset 0 -2px 0 rgba(255,255,255,0.22);
+}
+
+#pageCost .cost-period-trigger-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#pageCost .cost-period-trigger-icon {
+  width: 12px;
+  height: 14px;
+  position: relative;
+  flex-shrink: 0;
+  border: 1px solid rgba(142,240,191,0.56);
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(142,240,191,0.12), rgba(142,240,191,0.02));
+}
+
+#pageCost .cost-period-trigger-icon::before,
+#pageCost .cost-period-trigger-icon::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 1px;
+  background: rgba(142,240,191,0.72);
+}
+
+#pageCost .cost-period-trigger-icon::before {
+  top: 4px;
+}
+
+#pageCost .cost-period-trigger-icon::after {
+  top: 8px;
+}
+
+#pageCost .cost-period-trigger-title {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#pageCost .cost-period-trigger-sub {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(244,247,251,0.48);
+}
+
+#pageCost .cost-period-trigger.is-live .cost-period-trigger-sub {
+  color: rgba(142,240,191,0.9);
+}
+
+#pageCost .cost-period-trigger.is-live {
+  position: relative;
+}
+
+#pageCost .cost-period-trigger.is-live::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 38px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(142,240,191,0), rgba(142,240,191,0.88), rgba(142,240,191,0));
+}
+
+#pageCost .cost-charts-body {
+  padding: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+#pageCost .cost-chart-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.05);
+  background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01));
+}
+
+#pageCost .cost-chart-title {
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244,247,251,0.78);
+}
+
+#pageCost .cost-chart-wrap {
+  min-height: 300px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+#pageCost .cost-chart-legend {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 6px 12px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#pageCost .cost-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(244,247,251,0.72);
+  letter-spacing: 0.01em;
+}
+
+#pageCost .cost-chart-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
+#pageCost .cost-chart-legend-swatch.is-salaries {
+  background: #4b92c6;
+}
+
+#pageCost .cost-chart-legend-swatch.is-rental {
+  background: #c4e45f;
+}
+
+#pageCost .cost-chart-legend-swatch.is-overheads {
+  background: #4ade80;
+}
+
+@media (max-width: 1180px) {
+  #pageCost .cost-charts-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes loadingLogoBaseBreath {
+  0%, 100% {
+    opacity: 0.03;
+  }
+  50% {
+    opacity: 0.14;
+  }
+}
+
+@keyframes loadingLogoScalePulse {
+  0%, 100% {
+    transform: scale(0.996);
+  }
+  50% {
+    transform: scale(1.0035);
+  }
+}
 

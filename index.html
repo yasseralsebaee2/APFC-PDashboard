@@ -19,25 +19,27 @@
 </head>
 <body>
   <div class="loading-shell" id="loadingShell" aria-hidden="false">
-    <div class="loading-card">
-      <div class="loading-brand-row">
-        <img class="loading-brand loading-brand-apfc" src="assets/APFC_Logo.png" alt="APFC logo" />
-        <img class="loading-brand loading-brand-binghatti" src="assets/binghatti_logo.webp" alt="Binghatti logo" />
+    <div class="loading-scene">
+      <div class="loading-glow loading-glow-left"></div>
+      <div class="loading-glow loading-glow-right"></div>
+      <div class="loading-glow loading-glow-core"></div>
+      <div class="loading-logo-wrap">
+        <div class="loading-logo-beam"></div>
+        <div class="loading-binghatti-lockup" aria-label="Binghatti">
+          <svg class="loading-binghatti-mark" viewBox="0 0 180 120" aria-hidden="true">
+            <path d="M18 18h62c20 0 34 8 43 21l10 13c6 7 14 12 25 16l14 5" />
+            <path d="M18 18l41 59c9 13 24 21 41 21h77" />
+            <path d="M69 48h52c17 0 29 6 38 17l18 22" />
+          </svg>
+          <div class="loading-binghatti-divider" aria-hidden="true"></div>
+          <div class="loading-binghatti-wordmark">
+            <div class="loading-binghatti-en">BINGHATTI</div>
+            <div class="loading-binghatti-ar" lang="ar" dir="rtl">بنغاطي</div>
+          </div>
+        </div>
       </div>
-      <div class="loading-eyebrow">APFC Project Dashboard</div>
-      <div class="loading-title" id="loadingTitle">Preparing dashboard</div>
-      <div class="loading-copy" id="loadingMessage">Connecting to secure data sources and project context.</div>
-      <div class="loading-progress">
-        <span class="loading-dot"></span>
-        <span class="loading-dot"></span>
-        <span class="loading-dot"></span>
-      </div>
-      <div class="loading-skeleton-grid">
-        <span class="loading-skeleton loading-skeleton-wide"></span>
-        <span class="loading-skeleton"></span>
-        <span class="loading-skeleton"></span>
-        <span class="loading-skeleton loading-skeleton-wide"></span>
-      </div>
+      <div class="loading-title sr-only" id="loadingTitle">Preparing dashboard</div>
+      <div class="loading-copy sr-only" id="loadingMessage">Connecting to secure data sources and project context.</div>
     </div>
   </div>
   <div class="auth-shell" id="authShell" aria-hidden="true">
@@ -816,20 +818,15 @@
               <div class="panel-header">
                 <div>
                   <div class="panel-title">Consolidated Cost Report</div>
-                  <div class="panel-subtitle">Weekly execution cost breakdown based on active site allocations</div>
+                  <div class="panel-subtitle">Weekly cost workbook by direct, indirect, production, and unit rate</div>
                 </div>
-                <div class="panel-tag">CW</div>
+                <div class="panel-tag">Workbook</div>
               </div>
               <div class="cost-table-wrap">
                 <table class="financial-table">
                   <thead>
-                    <tr>
-                      <th class="col-head">CATEGORY / WEEK</th>
-                      <th class="num">Week 10</th>
-                      <th class="num">Week 11</th>
-                      <th class="num">Week 12</th>
-                      <th class="num">Week 13</th>
-                      <th class="num total-col">TOTAL</th>
+                    <tr id="costTableHeadRow">
+                      <th class="col-head">Cost Group</th>
                     </tr>
                   </thead>
                   <tbody id="costTableBody"></tbody>
@@ -837,27 +834,27 @@
               </div>
             </div>
             
-            <div class="cost-charts-panel">
-              <div class="panel-header">
-                <div>
+              <div class="cost-charts-panel">
+                <div class="panel-header">
+                  <div>
                   <div class="panel-title">Weekly Cost Trends</div>
-                  <div class="panel-subtitle">Cost progression by group</div>
-                </div>
-              </div>
-              <div class="cost-charts-body">
-                <div class="cost-chart-card">
-                  <div class="cost-chart-title">Cost by Category (AED)</div>
-                  <div class="cost-chart-wrap">
-                    <svg class="cost-chart-svg" id="costTrendSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+                  <div class="panel-subtitle">Trend views supporting the cost workbook above</div>
                   </div>
                 </div>
-                <div class="cost-chart-card" style="margin-top: 24px;">
-                  <div class="cost-chart-title">Cost per Executed Lm (AED/Lm)</div>
-                  <div class="cost-chart-wrap">
-                    <svg class="cost-chart-svg" id="costLmSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+                <div class="cost-charts-body">
+                  <div class="cost-chart-card">
+                  <div class="cost-chart-title">Cost Composition by Week</div>
+                    <div class="cost-chart-wrap">
+                      <svg class="cost-chart-svg" id="costTrendSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                  </div>
+                  <div class="cost-chart-card">
+                  <div class="cost-chart-title">Cost per Executed Lm</div>
+                    <div class="cost-chart-wrap">
+                      <svg class="cost-chart-svg" id="costLmSvg" viewBox="0 0 1000 320" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
                   </div>
                 </div>
-              </div>
             </div>
           </div>
         </section>
