@@ -1,5 +1,6 @@
 ﻿    const DATA_WORKER_URL = 'https://apfc-data.yasser-alsebaee.workers.dev/';
     const DATA_WORKER_API_KEY = 'apfc_F7k9LmQ2xR8vT5ZpA1sD6wN3YtE4uH0JcB9KqX';
+    const DAILY_REPORT_MANPOWER_CUTOVER = '2026-05-12';
     const DATA_FILE_KEYS = {
       piles: 'piles',
       kingpost: 'kingpost',
@@ -8,6 +9,7 @@
       users: 'users',
       manpower: 'manpower',
       manpowers: 'manpowers',
+      dailyreportmanpower: 'dailyreportmanpower',
       equipment: 'equipment',
       dailyrigs: 'dailyrigs',
       rigproduction: 'rigproduction'
@@ -227,6 +229,7 @@
     let anchorRows = [];
     let secantPileRows = [];
     let manpowerRows = [];
+    let dailyReportManpowerRows = [];
     let companyManpowerRows = [];
     let equipmentRegistryRows = [];
     let dailyReportEquipmentRows = [];
@@ -586,6 +589,19 @@
       });
     }
 
+    function extractDailyReportManpowerList(data) {
+      const items = Array.isArray(data) ? data : (!data || typeof data !== 'object' ? [] : [data.body, data.rows, data.items, data.data].find(Array.isArray) || []);
+      return items.filter(row => {
+        const keys = Object.keys(row || {}).map(key => key.toLowerCase());
+        return (
+          keys.includes('date') &&
+          (keys.includes('employeename') || keys.includes('employee name')) &&
+          (keys.includes('generaldesignation') || keys.includes('designation')) &&
+          (keys.includes('dailysalary') || keys.includes('daily salary'))
+        );
+      });
+    }
+
     const COMPANY_PROJECT_ALIASES = {
       Titania: ['titania', '89'],
       Vintage: ['vintage']
@@ -623,6 +639,145 @@
         joiningDate: normalizeText(row.joiningdate || row['Joining Date'] || row.joiningDate || row.joining_date),
         remarks: normalizeText(row.Remarks || row.remarks)
       };
+    }
+
+    function sanitizeDailyReportManpowerRow(row) {
+      const salaryRaw = row.dailysalary ?? row.dailySalary ?? row['Daily Salary'];
+      const dailySalary = Number(salaryRaw);
+      return {
+        date: normalizeDateString(row.date || row.Date),
+        employeeName: normalizeText(row.employeename || row.employeeName || row['Employee Name']),
+        employeeNumber: normalizeText(row.employeenumber || row.employeeNumber || row['Employee Number']),
+        designation: normalizeText(row.designation || row.Designation),
+        generalDesignation: normalizeText(row.generaldesignation || row.generalDesignation || row['General Designation']),
+        project: getCompanyProjectLabel(row.project || row.Project),
+        projectRaw: normalizeText(row.project || row.Project),
+        dailySalary: Number.isFinite(dailySalary) ? dailySalary : 0
+      };
+    }
+
+    const LEGACY_COST_PERSONNEL_DEFS = [
+      { key: 'pm', label: 'Project Manager', countField: 'projectmanager', aliases: ['projectmanager', 'project manager'] },
+      { key: 'se', label: 'Site Engineers', countField: 'siteengineer', aliases: ['siteengineer', 'site engineer', 'siteenginner'] },
+      { key: 'foreman', label: 'Foreman', countField: 'foreman', aliases: ['foreman'] },
+      { key: 'op', label: 'Equipment Operators', countField: 'operator', aliases: ['operator', 'operators'] },
+      { key: 'vb', label: 'Vibro Operators', countField: 'vibro operator', aliases: ['vibro operator', 'vibrooperator', 'vibro_operator'] },
+      { key: 'rig', label: 'Riggers', countField: 'riggers', aliases: ['riggers', 'rigger'] },
+      { key: 'we', label: 'Welders', countField: 'welder', aliases: ['welder', 'welders'] },
+      { key: 'me', label: 'Mechanic', countField: 'mechanic', aliases: ['mechanic', 'mechanics'] },
+      { key: 'hl', label: 'Helpers', countField: 'helpers', aliases: ['helpers', 'helper'] }
+    ];
+
+    function normalizeCostPersonnelLabel(value) {
+      return normalizeText(value).toLowerCase();
+    }
+
+    function getCostPersonnelMetaFromGeneralDesignation(value) {
+      const normalized = normalizeCostPersonnelLabel(value);
+      if (!normalized) return null;
+      if (normalized === 'project manager') return { key: 'pm', label: 'Project Manager' };
+      if (normalized === 'site engineer') return { key: 'se', label: 'Site Engineers' };
+      if (normalized === 'foreman') return { key: 'foreman', label: 'Foreman' };
+      if (normalized === 'operator') return { key: 'op', label: 'Equipment Operators' };
+      if (normalized === 'vibro operator') return { key: 'vb', label: 'Vibro Operators' };
+      if (normalized === 'rigger') return { key: 'rig', label: 'Riggers' };
+      if (normalized === 'welder') return { key: 'we', label: 'Welders' };
+      if (normalized === 'mechanic') return { key: 'me', label: 'Mechanic' };
+      if (normalized === 'helper') return { key: 'hl', label: 'Helpers' };
+      const key = `gd_${normalized.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+      const label = normalized.replace(/\b\w/g, chr => chr.toUpperCase());
+      return { key, label };
+    }
+
+    function getCostPersonnelCounts(row) {
+      if (row?.personnelCounts && typeof row.personnelCounts === 'object') return row.personnelCounts;
+      const counts = {};
+      LEGACY_COST_PERSONNEL_DEFS.forEach(def => {
+        counts[def.key] = getManpowerCountValue(row, def.aliases);
+      });
+      return counts;
+    }
+
+    function getCostPersonnelAmounts(row, dailyRates) {
+      if (row?.personnelAmounts && typeof row.personnelAmounts === 'object') return row.personnelAmounts;
+      const amounts = {};
+      LEGACY_COST_PERSONNEL_DEFS.forEach(def => {
+        const explicit = Number(row?.[`salary_${def.key}`]);
+        if (Number.isFinite(explicit) && explicit > 0) {
+          amounts[def.key] = explicit;
+          return;
+        }
+        amounts[def.key] = (getManpowerCountValue(row, def.aliases) || 0) * (Number(dailyRates?.[def.key]) || 0);
+      });
+      return amounts;
+    }
+
+    function getCostPersonnelRowDefs(rows) {
+      const defs = [];
+      const seen = new Set();
+      const addDef = def => {
+        if (!def || !def.key || seen.has(def.key)) return;
+        seen.add(def.key);
+        defs.push(def);
+      };
+      LEGACY_COST_PERSONNEL_DEFS.forEach(addDef);
+      (rows || []).forEach(row => {
+        const labels = row?.personnelLabels;
+        if (!labels || typeof labels !== 'object') return;
+        Object.entries(labels).forEach(([key, label]) => addDef({ key, label }));
+      });
+      return defs;
+    }
+
+    function matchesCostPlotScope(row) {
+      if (isAllPlotsValue(selectedPlot)) return true;
+      const rowPlot = normalizeText(row?.plot);
+      return rowPlot === normalizeText(selectedPlot) || isAllPlotsValue(rowPlot);
+    }
+
+    function getCostPageManpowerRows(project) {
+      const rawProject = normalizeText(project || selectedProject || DEFAULT_PROJECT);
+      const targetProject = isAllProjectsValue(rawProject) ? '' : rawProject;
+      const targetProjectToken = isAllProjectsValue(rawProject) ? '' : getCompanyProjectToken(rawProject);
+
+      const legacyRows = manpowerRows.filter(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (!dateKey || dateKey >= DAILY_REPORT_MANPOWER_CUTOVER) return false;
+        const projectMatch = !targetProject || normalizeText(row?.project) === targetProject;
+        return projectMatch && matchesCostPlotScope(row);
+      });
+
+      const groupedNewRows = new Map();
+      dailyReportManpowerRows.forEach(row => {
+        const dateKey = normalizeDateString(row?.date);
+        if (!dateKey || dateKey < DAILY_REPORT_MANPOWER_CUTOVER) return;
+        if (targetProjectToken && getCompanyProjectToken(row.projectRaw || row.project) !== targetProjectToken) return;
+        const meta = getCostPersonnelMetaFromGeneralDesignation(row.generalDesignation);
+        if (!meta) return;
+        const groupKey = isAllProjectsValue(rawProject)
+          ? `${getCompanyProjectToken(row.projectRaw || row.project)}|${dateKey}`
+          : dateKey;
+        const bucket = groupedNewRows.get(groupKey) || {
+          project: getCompanyProjectLabel(row.project),
+          projectRaw: normalizeText(row.projectRaw || row.project),
+          plot: '-',
+          date: dateKey,
+          costSource: 'dailyreport',
+          personnelCounts: {},
+          personnelAmounts: {},
+          personnelLabels: {}
+        };
+        bucket.personnelCounts[meta.key] = (Number(bucket.personnelCounts[meta.key]) || 0) + 1;
+        bucket.personnelAmounts[meta.key] = (Number(bucket.personnelAmounts[meta.key]) || 0) + (Number(row.dailySalary) || 0);
+        bucket.personnelLabels[meta.key] = meta.label;
+        groupedNewRows.set(groupKey, bucket);
+      });
+
+      return [...legacyRows, ...Array.from(groupedNewRows.values())].sort((a, b) => {
+        const dateA = normalizeDateString(a?.date);
+        const dateB = normalizeDateString(b?.date);
+        return dateA.localeCompare(dateB);
+      });
     }
 
     function extractEquipmentRegistryList(data) {
@@ -5566,6 +5721,14 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }
 
       try {
+        const dailyReportManpowerData = await fetchWorkerJson(DATA_FILE_KEYS.dailyreportmanpower);
+        dailyReportManpowerRows = extractDailyReportManpowerList(dailyReportManpowerData).map(sanitizeDailyReportManpowerRow);
+      } catch (err) {
+        console.error('Unable to load daily report manpower source:', err);
+        dailyReportManpowerRows = [];
+      }
+
+      try {
         const equipmentData = await fetchWorkerJson(DATA_FILE_KEYS.equipment);
         equipmentRegistryRows = extractEquipmentRegistryList(equipmentData).map(sanitizeEquipmentRegistryRow);
       } catch (err) {
@@ -6493,17 +6656,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const context = latestCostSheetContext;
       if (!context) return null;
 
-      const roleDefs = [
-        { key: 'pm', label: 'Project Manager', aliases: ['projectmanager', 'project manager'] },
-        { key: 'se', label: 'Site Engineers', aliases: ['siteengineer', 'site engineer', 'siteenginner'] },
-        { key: 'foreman', label: 'Foreman', aliases: ['foreman'] },
-        { key: 'op', label: 'Equipment Operators', aliases: ['operator', 'operators'] },
-        { key: 'vb', label: 'Vibro Operators', aliases: ['vibro operator', 'vibrooperator', 'vibro_operator'] },
-        { key: 'rig', label: 'Riggers', aliases: ['riggers', 'rigger'] },
-        { key: 'we', label: 'Welders', aliases: ['welder', 'welders'] },
-        { key: 'me', label: 'Mechanic', aliases: ['mechanic', 'mechanics'] },
-        { key: 'hl', label: 'Helpers', aliases: ['helpers', 'helper'] }
-      ];
+      const roleDefs = context.personnelRowDefs || LEGACY_COST_PERSONNEL_DEFS;
 
       const weekNumber = periodType === 'week' ? Number(periodValue) : null;
       const weekMeta = periodType === 'week' ? context.weekDataMap.get(weekNumber) || null : null;
@@ -6572,16 +6725,20 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
         const laborDays = dates.map(dateKey => {
           const row = manpowerByDate.get(dateKey);
+          const counts = row ? getCostPersonnelCounts(row) : {};
+          const amounts = row ? getCostPersonnelAmounts(row, context.dailyRates) : {};
           const rows = roleDefs.map(def => {
-          const headcount = row ? getManpowerCountValue(row, def.aliases) : 0;
-          const dailyRate = Number(context.dailyRates[def.key]) || 0;
-          return {
-            label: def.label,
-            headcount,
-            dailyRate,
-            chargedDays: headcount > 0 ? 1 : 0,
-            amount: headcount * dailyRate
-          };
+            const headcount = Number(counts[def.key]) || 0;
+            const amount = Number(amounts[def.key]) || 0;
+            const baseRate = Number(context.dailyRates[def.key]) || 0;
+            const dailyRate = headcount > 0 ? (amount / headcount) : baseRate;
+            return {
+              label: def.label,
+              headcount,
+              dailyRate,
+              chargedDays: headcount > 0 ? 1 : 0,
+              amount
+            };
           }).filter(item => item.headcount > 0 || item.amount > 0);
           return {
             date: dateKey,
@@ -6845,6 +7002,8 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
     function renderCostPage(project, forceAnimate = false) {
       if (!els.pageCost) return;
       const rows = getRowsForProject(project);
+      const costManpowerRows = getCostPageManpowerRows(project);
+      const personnelRowDefs = getCostPersonnelRowDefs(costManpowerRows);
       const executed = getExecutedRows(rows).filter(r => getOverviewDateKey(r));
       const titaniaHardcodedCostWeeks = normalizeText(project).toLowerCase() === 'titania'
         ? {
@@ -6877,28 +7036,25 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         );
       });
 
-      const data = {};
+      const dailyRates = {
+        pm: 461.5,
+        se: 461.5,
+        foreman: 343.4,
+        op: 247.8,
+        vb: 101,
+        rig: 108.2,
+        we: 151.4,
+        me: 315.5,
+        hl: 101
+      };
 
-      function getManpowerValue(row, keys) {
-        for (const key of keys) {
-          const raw = row?.[key];
-          if (raw === undefined || raw === null || raw === '') continue;
-          const n = Number(raw);
-          if (Number.isFinite(n)) return n;
-        }
-        return 0;
-      }
+      const data = {};
 
       const manpowerWeekly = new Map();
       const normalizedSelectedPlot = normalizeText(selectedPlot);
-      const filteredManpower = manpowerRows.filter(row => {
-        const projectMatch = normalizeText(row?.project) === normalizeText(selectedProject);
-        const plotMatch = isAllPlotsValue(selectedPlot) || normalizeText(row?.plot) === normalizeText(selectedPlot);
-        return projectMatch && plotMatch;
-      });
 
       const latestDailyManpower = new Map();
-      filteredManpower.forEach(row => {
+      costManpowerRows.forEach(row => {
         const dateKey = normalizeDateString(row?.date);
         if (!dateKey) return;
         latestDailyManpower.set(dateKey, row);
@@ -6918,17 +7074,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       }
 
       const lastDayManpower = lastDayDateKey ? latestDailyManpower.get(lastDayDateKey) : null;
-      const lastDayCounts = lastDayManpower ? {
-        pm: getManpowerValue(lastDayManpower, ['projectmanager', 'project manager']),
-        se: getManpowerValue(lastDayManpower, ['siteengineer', 'site engineer', 'siteenginner']),
-        foreman: getManpowerValue(lastDayManpower, ['foreman']),
-        op: getManpowerValue(lastDayManpower, ['operator', 'operators']),
-        vb: getManpowerValue(lastDayManpower, ['vibro operator', 'vibrooperator', 'vibro_operator']),
-        rig: getManpowerValue(lastDayManpower, ['riggers', 'rigger']),
-        we: getManpowerValue(lastDayManpower, ['welder', 'welders']),
-        me: getManpowerValue(lastDayManpower, ['mechanic', 'mechanics']),
-        hl: getManpowerValue(lastDayManpower, ['helpers', 'helper'])
-      } : { pm: 0, se: 0, foreman: 0, op: 0, vb: 0, rig: 0, we: 0, me: 0, hl: 0 };
+      const lastDayCounts = lastDayManpower ? getCostPersonnelCounts(lastDayManpower) : {};
 
       Array.from(latestDailyManpower.values()).forEach(row => {
         const dateKey = normalizeDateString(row?.date);
@@ -6942,15 +7088,8 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const bucket = manpowerWeekly.get(cwNum) || { dailyRows: [] };
         bucket.dailyRows.push({
           date: dateKey,
-          pm: getManpowerValue(row, ['projectmanager', 'project manager']),
-          se: getManpowerValue(row, ['siteengineer', 'site engineer', 'siteenginner']),
-          foreman: getManpowerValue(row, ['foreman']),
-          op: getManpowerValue(row, ['operator', 'operators']),
-          vb: getManpowerValue(row, ['vibro operator', 'vibrooperator', 'vibro_operator']),
-          rig: getManpowerValue(row, ['riggers', 'rigger']),
-          we: getManpowerValue(row, ['welder', 'welders']),
-          me: getManpowerValue(row, ['mechanic', 'mechanics']),
-          hl: getManpowerValue(row, ['helpers', 'helper'])
+          personnelCounts: getCostPersonnelCounts(row),
+          personnelAmounts: getCostPersonnelAmounts(row, dailyRates)
         });
         manpowerWeekly.set(cwNum, bucket);
       });
@@ -6972,7 +7111,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
           if (!Number.isFinite(cwNum) || cwNum < 1) return;
           const bucket = manpowerWeekly.get(cwNum) || { dailyRows: [] };
           if (!bucket.dailyRows.some(row => row.date === item.date)) {
-            bucket.dailyRows.push({ date: item.date, pm: 0, se: 0, foreman: 0, op: 0, vb: 0, rig: 0, we: 0, me: 0, hl: 0 });
+            bucket.dailyRows.push({ date: item.date, personnelCounts: {}, personnelAmounts: {} });
           }
           manpowerWeekly.set(cwNum, bucket);
         });
@@ -6986,15 +7125,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         data[week] = {
           source: 'manpower',
           dailyRows,
-          pm: Number(lastDaily.pm) || 0,
-          se: Number(lastDaily.se) || 0,
-          foreman: Number(lastDaily.foreman) || 0,
-          op: Number(lastDaily.op) || 0,
-          vb: Number(lastDaily.vb) || 0,
-          rig: Number(lastDaily.rig) || 0,
-          we: Number(lastDaily.we) || 0,
-          me: Number(lastDaily.me) || 0,
-          hl: Number(lastDaily.hl) || 0,
+          personnelCounts: lastDaily.personnelCounts || {},
           daysFromManpower: days
         };
       });
@@ -7035,17 +7166,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         </th>`;
       }
 
-      const dailyRates = {
-        pm: 461.5,
-        se: 461.5,
-        foreman: 343.4,
-        op: 247.8,
-        vb: 101,
-        rig: 108.2,
-        we: 151.4,
-        me: 315.5,
-        hl: 101
-      };
+      const lastDayAmounts = lastDayManpower ? getCostPersonnelAmounts(lastDayManpower, dailyRates) : {};
 
       const overheadsDaily = 2540; // Updated overheads rate
       const getDailyReportEquipmentSnapshotForDate = (dateKey = '') => {
@@ -7121,20 +7242,14 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const dailyReportLastDaySnapshot = getDailyReportEquipmentSnapshotForDate(lastDayDateKey);
 
       const lastDayValues = {
-        pm: lastDayCounts.pm * dailyRates.pm,
-        se: lastDayCounts.se * dailyRates.se,
-        foreman: lastDayCounts.foreman * dailyRates.foreman,
-        op: lastDayCounts.op * dailyRates.op,
-        vb: lastDayCounts.vb * dailyRates.vb,
-        rig: lastDayCounts.rig * dailyRates.rig,
-        we: lastDayCounts.we * dailyRates.we,
-        me: lastDayCounts.me * dailyRates.me,
-        hl: lastDayCounts.hl * dailyRates.hl,
         r_rig: lastDayDateKey && dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.rigRateTotal : 0,
         r_crane: lastDayDateKey && dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.craneRateTotal : 0,
         r_other: lastDayDateKey && dailyReportLastDaySnapshot ? dailyReportLastDaySnapshot.otherRateTotal : 0
       };
-      lastDayValues.salaries = lastDayValues.pm + lastDayValues.se + lastDayValues.foreman + lastDayValues.op + lastDayValues.vb + lastDayValues.rig + lastDayValues.we + lastDayValues.me + lastDayValues.hl;
+      personnelRowDefs.forEach(def => {
+        lastDayValues[def.key] = Number(lastDayAmounts[def.key]) || 0;
+      });
+      lastDayValues.salaries = personnelRowDefs.reduce((sum, def) => sum + (Number(lastDayValues[def.key]) || 0), 0);
       lastDayValues.rental = lastDayValues.r_rig + lastDayValues.r_crane + lastDayValues.r_other;
       lastDayValues.direct = lastDayValues.salaries + lastDayValues.rental;
       lastDayValues.overheads = lastDayDateKey ? overheadsDaily : 0;
@@ -7160,7 +7275,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const weeklyData = weeks.map(w => {
         const hardcodedWeek = titaniaHardcodedCostWeeks[w];
         if (hardcodedWeek) {
-          data[w] = data[w] || { dailyRows: [], pm: 0, se: 0, foreman: 0, op: 0, vb: 0, rig: 0, we: 0, me: 0, hl: 0 };
+          data[w] = data[w] || { dailyRows: [], personnelCounts: {} };
           const salaries = Number(hardcodedWeek.salaries) || 0;
           const rental = Number(hardcodedWeek.rental) || 0;
           const direct = Number(hardcodedWeek.direct) || (salaries + rental);
@@ -7185,15 +7300,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             w,
             days,
             salaries,
-            pm: 0,
-            se: 0,
-            foreman: 0,
-            op: 0,
-            vb: 0,
-            rig: 0,
-            we: 0,
-            me: 0,
-            hl: 0,
+            personnelCounts: {},
             rental,
             r_rig: 0,
             r_crane: 0,
@@ -7212,27 +7319,15 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const d = data[w];
         const days = Number.isFinite(d?.daysFromManpower) ? d.daysFromManpower : 0;
         const hasDailyRows = Array.isArray(d?.dailyRows) && d.dailyRows.length > 0;
+        const personnelAmountsByKey = {};
+        personnelRowDefs.forEach(def => {
+          personnelAmountsByKey[def.key] = (d?.dailyRows || []).reduce((sum, dayRow) => {
+            const amounts = dayRow?.personnelAmounts || {};
+            return sum + (Number(amounts[def.key]) || 0);
+          }, 0);
+        });
 
-        const calcRoleCost = (roleKey, rate) => {
-          let roleTotal = 0;
-          (d?.dailyRows || []).forEach(dayRow => {
-            const count = Number(dayRow?.[roleKey]) || 0;
-            roleTotal += count * rate;
-          });
-          return roleTotal;
-        };
-        
-        const pm = calcRoleCost('pm', dailyRates.pm);
-        const se = calcRoleCost('se', dailyRates.se);
-        const foreman = calcRoleCost('foreman', dailyRates.foreman);
-        const op = calcRoleCost('op', dailyRates.op);
-        const vb = calcRoleCost('vb', dailyRates.vb);
-        const rig = calcRoleCost('rig', dailyRates.rig);
-        const we = calcRoleCost('we', dailyRates.we);
-        const me = calcRoleCost('me', dailyRates.me);
-        const hl = calcRoleCost('hl', dailyRates.hl);
-
-        const salaries = pm + se + foreman + op + vb + rig + we + me + hl;
+        const salaries = personnelRowDefs.reduce((sum, def) => sum + (Number(personnelAmountsByKey[def.key]) || 0), 0);
 
         const calcEquipmentRental = (equipmentKey) => {
           if (!hasDailyRows) return 0;
@@ -7258,16 +7353,6 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const total = direct + overheads;
         const lm = cwLmMap.get(w) || 0;
         
-        sums.pm = (sums.pm || 0) + pm;
-        sums.se = (sums.se || 0) + se;
-        sums.foreman = (sums.foreman || 0) + foreman;
-        sums.op = (sums.op || 0) + op;
-        sums.vb = (sums.vb || 0) + vb;
-        sums.rig = (sums.rig || 0) + rig;
-        sums.we = (sums.we || 0) + we;
-        sums.me = (sums.me || 0) + me;
-        sums.hl = (sums.hl || 0) + hl;
-
         sums.r_rig = (sums.r_rig || 0) + r_rig;
         sums.r_crane = (sums.r_crane || 0) + r_crane;
         sums.r_other = (sums.r_other || 0) + r_other;
@@ -7283,11 +7368,28 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         const cumTotal = sums.total;
         const weekCplm = lm > 0 ? total / lm : 0;
         const cplm = cumLm > 0 ? cumTotal / cumLm : 0;
-
-        return { w, days, salaries, pm, se, foreman, op, vb, rig, we, me, hl, rental, r_rig, r_crane, r_other, direct, overheads, total, lm, cumLm, cumTotal, weekCplm, cplm };
+        return {
+          w,
+          days,
+          salaries,
+          personnelCounts: d?.personnelCounts || {},
+          rental,
+          r_rig,
+          r_crane,
+          r_other,
+          direct,
+          overheads,
+          total,
+          lm,
+          cumLm,
+          cumTotal,
+          weekCplm,
+          cplm,
+          ...personnelAmountsByKey
+        };
       });
       const allProjectDates = [
-        ...getProjectWideManpowerRows(project).map(row => normalizeDateString(row?.date)).filter(Boolean),
+        ...costManpowerRows.map(row => normalizeDateString(row?.date)).filter(Boolean),
         ...getProjectWideDailyEquipmentRows(project).map(row => normalizeDateString(row?.date)).filter(Boolean),
         ...getProjectWidePileRows(project).map(row => getOverviewDateKey(row)).filter(Boolean),
         ...getProjectWideSecantPileRows(project).map(row => getSecantExecutionDateKey(row)).filter(Boolean)
@@ -7301,9 +7403,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         dailyRates,
         weekDataMap: new Map(weeklyData.map(item => [item.w, item])),
         weeklySourceData: data,
+        personnelRowDefs,
         projectWidePileRows: getProjectWidePileRows(project),
         projectWideSecantRows: getProjectWideSecantPileRows(project),
-        projectWideManpowerRows: getProjectWideManpowerRows(project),
+        projectWideManpowerRows: costManpowerRows,
         projectWideEquipmentRows: getProjectWideDailyEquipmentRows(project)
       };
       els.costTableHeadRow?.querySelectorAll('.cost-period-trigger').forEach(btn => {
@@ -7361,15 +7464,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
       const tableRows = [
         { key: 'directSection', sectionLabel: 'Direct', sectionRow: true },
         { key: 'salaries', label: 'Personnel Cost', groupSub: true, hasPivot: true },
-        { targetPivot: 'salaries', key: 'pm', label: 'Project Manager' },
-        { targetPivot: 'salaries', key: 'se', label: 'Site Engineers' },
-        { targetPivot: 'salaries', key: 'foreman', label: 'Foreman' },
-        { targetPivot: 'salaries', key: 'op', label: 'Equipment Operators' },
-        { targetPivot: 'salaries', key: 'vb', label: 'Vibro Operators' },
-        { targetPivot: 'salaries', key: 'rig', label: 'Riggers' },
-        { targetPivot: 'salaries', key: 'we', label: 'Welders' },
-        { targetPivot: 'salaries', key: 'me', label: 'Mechanic' },
-        { targetPivot: 'salaries', key: 'hl', label: 'Helpers' },
+        ...personnelRowDefs.map(def => ({ targetPivot: 'salaries', key: def.key, label: def.label })),
 
         { key: 'rental', label: 'Equipment Rental', groupSub: true, hasPivot: true },
         ...rentalDetailRows,
@@ -7377,11 +7472,10 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         { key: 'direct', label: '', groupHead: true },
         { key: 'overheadSection', sectionLabel: 'Indirect', sectionRow: true },
         { key: 'overheads', label: 'Overheads Share', groupSub: true },
-        { key: 'overheads', label: '', groupHead: true },
         { key: 'totalBreak', sectionLabel: '', sectionRow: true },
         { key: 'total', label: 'Total Cost', totalRow: true },
         { key: 'productionSection', sectionLabel: 'Production', sectionRow: true },
-        { key: 'lm', label: 'Executed Lm', groupSub: true },
+        { key: 'lm', label: 'This Week Executed Lm', groupSub: true },
         { key: 'cumLm', label: 'Cumulative Lm', groupHead: true },
         { key: 'unitRateSection', sectionLabel: 'Unit Rate Calculation', sectionRow: true },
         { key: 'weekCplm', label: 'This Week Cost / Lm', groupSub: true },
@@ -7390,7 +7484,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
 
       function getCostRowRate(row) {
         if (!row || !row.targetPivot) return null;
-        if (row.targetPivot === 'salaries') return dailyRates[row.key] || null;
+        if (row.targetPivot === 'salaries') return Object.prototype.hasOwnProperty.call(dailyRates, row.key) ? dailyRates[row.key] : null;
         return null;
       }
 
@@ -7443,7 +7537,7 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
             let countText = '-';
             let daysText = '-';
             if (row.targetPivot === 'salaries') {
-              count = data[wd.w][row.key];
+              count = Number(wd.personnelCounts?.[row.key]) || 0;
               countText = `${count} Nos`;
               daysText = `${targetDays} Days`;
             } else if (row.key === 'r_rig') {
@@ -7517,6 +7611,31 @@ function renderProductionMetricChart(project, key, forceAnimate = false) {
         html += `</tr>`;
       });
       if (els.costTableBody) els.costTableBody.innerHTML = html;
+
+      const costTable = els.pageCost?.querySelector('.financial-table');
+      if (costTable && costTable.dataset.hoverBound !== 'true') {
+        const setCostColumnHover = colIndex => {
+          costTable.querySelectorAll('.is-col-hover').forEach(cell => cell.classList.remove('is-col-hover'));
+          if (!Number.isInteger(colIndex) || colIndex < 1) return;
+          costTable.querySelectorAll('tr').forEach(tr => {
+            const cell = tr.children[colIndex];
+            if (cell && !cell.hasAttribute('colspan')) cell.classList.add('is-col-hover');
+          });
+        };
+
+        costTable.addEventListener('mouseover', evt => {
+          const cell = evt.target.closest('th, td');
+          if (!cell || !costTable.contains(cell)) return;
+          if (cell.hasAttribute('colspan')) {
+            setCostColumnHover(-1);
+            return;
+          }
+          setCostColumnHover(cell.cellIndex);
+        });
+
+        costTable.addEventListener('mouseleave', () => setCostColumnHover(-1));
+        costTable.dataset.hoverBound = 'true';
+      }
 
       function scrollCostTableToLatestPeriod() {
         const costTableWrap = els.pageCost?.querySelector('.cost-table-wrap');
